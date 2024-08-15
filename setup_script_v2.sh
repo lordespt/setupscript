@@ -11,6 +11,40 @@ check_install() {
     fi
 }
 
+# Function to clean up stale /etc/fstab entries
+cleanup_fstab() {
+    for uuid in $(grep '^UUID=' /etc/fstab | awk '{print $1}' | cut -d= -f2); do
+        if ! lsblk -o UUID | grep -q $uuid; then
+            echo "Removing stale /etc/fstab entry for UUID=$uuid"
+            sudo sed -i "\|UUID=$uuid|d" /etc/fstab
+        fi
+    done
+}
+
+# Function to discover and mount drives
+discover_drives() {
+    lsblk -o UUID,NAME,FSTYPE,SIZE,MOUNTPOINT | grep -v "loop" | grep -v "SWAP" | grep -v "\[SWAP\]" | while read -r line; do
+        UUID=$(echo $line | awk '{print $1}')
+        NAME=$(echo $line | awk '{print $2}')
+        FSTYPE=$(echo $line | awk '{print $3}')
+
+        if [ ! -z "$UUID" ] && [ "$FSTYPE" != "" ]; then
+            MOUNTPOINT="/mnt/$NAME"
+            mkdir -p "$MOUNTPOINT"
+            # Check if the entry already exists in /etc/fstab
+            if ! grep -qs "UUID=$UUID" /etc/fstab; then
+                echo "Adding new entry to /etc/fstab: UUID=$UUID $MOUNTPOINT $FSTYPE defaults 0 2"
+                echo "UUID=$UUID $MOUNTPOINT $FSTYPE defaults 0 2" >> /etc/fstab
+            else
+                echo "Entry for UUID=$UUID already exists in /etc/fstab. Skipping."
+            fi
+        fi
+    done
+
+    # Mount all drives listed in /etc/fstab
+    mount -a
+}
+
 # Install and Switch to Low-Latency Kernel
 echo "Installing and switching to the low-latency kernel..."
 
@@ -21,6 +55,24 @@ sudo sed -i 's/GRUB_DEFAULT=0/GRUB_DEFAULT="Advanced options for Ubuntu>Ubuntu, 
 sudo update-grub
 
 echo "Low-latency kernel installed and set as default."
+
+# Optimize CPU Performance
+echo "Optimizing CPU performance by setting the governor to 'performance'..."
+
+check_install cpufrequtils
+echo 'GOVERNOR="performance"' | sudo tee /etc/default/cpufrequtils
+sudo systemctl restart cpufrequtils
+
+echo "CPU performance optimized."
+
+# Disable Unnecessary Power Management
+echo "Disabling unnecessary power management features..."
+
+# Update GRUB for Power Management Settings
+sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash intel_pstate=disable"/g' /etc/default/grub
+sudo update-grub
+
+echo "Power management settings updated. A reboot is required to apply these changes."
 
 # Create the custom ASCII logo
 logo="
@@ -55,27 +107,12 @@ apt-get purge -y update-notifier
 
 echo "Updates disabled."
 
+# Clean up stale fstab entries
+echo "Cleaning up stale /etc/fstab entries..."
+cleanup_fstab
+
 # Configure Automatic HDD/SSD Mount on Startup
 echo "Configuring automatic HDD/SSD mount on startup..."
-
-discover_drives() {
-    lsblk -o UUID,NAME,FSTYPE,SIZE,MOUNTPOINT | grep -v "loop" | grep -v "SWAP" | grep -v "\[SWAP\]" | while read -r line; do
-      UUID=$(echo $line | awk '{print $1}')
-      NAME=$(echo $line | awk '{print $2}')
-      FSTYPE=$(echo $line | awk '{print $3}')
-
-      if [ ! -z "$UUID" ] && [ "$FSTYPE" != "" ]; then
-        MOUNTPOINT="/mnt/$NAME"
-        mkdir -p "$MOUNTPOINT"
-        if ! grep -qs "$UUID" /etc/fstab; then
-            echo "UUID=$UUID $MOUNTPOINT $FSTYPE defaults 0 2" >> /etc/fstab
-        fi
-      fi
-    done
-
-    # Mount all drives listed in /etc/fstab
-    mount -a
-}
 
 discover_drives
 
@@ -280,32 +317,41 @@ sudo cat << EOF > /etc/update-motd.d/99-custom-motd
 #!/bin/bash
 
 echo "***************************************************"
-echo "Welcome to Your Advanced Audio PC"
+echo "Welcome to Your Advanced Audio Playback PC"
 echo "Hostname: \$(hostname)"
 echo "Local IP Address: \$(hostname -I | awk '{print \$1}')"
 echo "Public IP Address: \$(curl -s https://api.ipify.org)"
 echo "System Uptime: \$(uptime -p)"
 echo "***************************************************"
-echo "Audio Playback Environment:"
-echo " - JACK Server Status: \$(systemctl is-active jackd)"
-echo " - PulseAudio Status: \$(systemctl is-active pulseaudio)"
-echo " - CPU Governor: \$(cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor | uniq)"
-echo " - Low Latency Kernel: \$(uname -r | grep -q lowlatency && echo Yes || echo No)"
-echo "***************************************************"
-echo "System Audio Tuning:"
-echo " - Low Latency Kernel: \$(uname -r | grep -q lowlatency && echo Yes || echo No)"
-echo " - Real-Time Priority: \$(ulimit -r)"
+echo "Roon Server Status: \$(systemctl is-active roonserver)"
+echo "CPU Governor: \$(cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor | uniq)"
+echo "Low Latency Kernel: \$(uname -r | grep -q lowlatency && echo Yes || echo No)"
 echo "***************************************************"
 echo "$logo"
 echo "***************************************************"
-echo "Advanced Audio PC - Welcome!"
-echo "Enjoy your high-fidelity audio playback experience."
+echo "Advanced Audio Playback PC - Welcome!"
+echo "Enjoy your high-fidelity audio playback experience with Roon."
 echo "***************************************************"
 EOF
 
 # Make the custom MOTD script executable
 sudo chmod +x /etc/update-motd.d/99-custom-motd
 
+# Install ALSA and PulseAudio Tweaks
+echo "Installing ALSA and PulseAudio tweaks for optimal audio playback quality..."
+
+check_install alsa-utils
+check_install pulseaudio
+
+# Configure PulseAudio
+sudo sed -i 's/^; resample-method = speex-float-1/resample-method = src-sinc-best-quality/' /etc/pulse/daemon.conf
+sudo sed -i 's/^; default-sample-format = s16le/default-sample-format = s32le/' /etc/pulse/daemon.conf
+sudo sed -i 's/^; default-sample-rate = 44100/default-sample-rate = 44100/' /etc/pulse/daemon.conf
+sudo sed -i 's/^; alternate-sample-rate = 48000/alternate-sample-rate = 48000/' /etc/pulse/daemon.conf
+
+echo "ALSA and PulseAudio configured."
+
 # Final Message
 echo "Setup complete! Your Advanced Audio PC login experience is now personalized."
 echo "You can remotely access this machine using the public IP: $PUBLIC_IP"
+echo "A reboot is required to apply power management settings."
