@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# Function to check if a package is installed
 check_install() {
     PACKAGE=$1
     if dpkg -l | grep -q "$PACKAGE"; then
@@ -11,18 +10,15 @@ check_install() {
     fi
 }
 
-# Install and Switch to Low-Latency Kernel
 echo "Installing and switching to the low-latency kernel..."
 
 check_install linux-lowlatency
 
-# Set low-latency kernel as the default
 sudo sed -i 's/GRUB_DEFAULT=0/GRUB_DEFAULT="Advanced options for Ubuntu>Ubuntu, with Linux lowlatency"/g' /etc/default/grub
 sudo update-grub
 
 echo "Low-latency kernel installed and set as default."
 
-# Create the custom ASCII logo
 logo="
   ___    ___  ______  ___________ 
  / _ \  / _ \ | ___ \/  __ \  _  \\
@@ -36,7 +32,6 @@ Advanced Audio PC Distribution
 Maintained by lordepst
 "
 
-# Disable Automatic Updates
 echo "Disabling automatic updates..."
 
 systemctl stop unattended-upgrades
@@ -55,7 +50,6 @@ apt-get purge -y update-notifier
 
 echo "Updates disabled."
 
-# Configure Automatic HDD/SSD Mount on Startup
 echo "Configuring automatic HDD/SSD mount on startup..."
 
 discover_drives() {
@@ -81,7 +75,6 @@ discover_drives
 
 echo "Automatic HDD/SSD mount configured."
 
-# Enable Auto-login
 echo "Enabling auto-login..."
 
 USERNAME="aserver"
@@ -97,18 +90,15 @@ systemctl enable getty@tty1.service
 
 echo "Auto-login enabled for user $USERNAME."
 
-# Install Remmina and Setup for Remote Access
 echo "Installing Remmina and setting up remote access..."
 
 check_install remmina
 check_install remmina-plugin-rdp
 check_install xrdp
 
-# Configure XRDP to allow remote RDP connections
 sudo systemctl enable xrdp
 sudo systemctl start xrdp
 
-# Fetch the public IP address
 PUBLIC_IP=$(curl -s https://api.ipify.org)
 
 REMOTEDIR="/home/$USERNAME/.local/share/remmina"
@@ -134,12 +124,11 @@ disabletheming=false
 disablefullwindowdrag=false
 EOF
 
-# Fix permissions
 chown -R $USERNAME:$USERNAME "$REMOTEDIR"
 
 echo "Remmina installed and remote access configured using public IP: $PUBLIC_IP"
 
-# Detect and Configure NAS Drives
+
 echo "Detecting and configuring NAS drives..."
 
 check_install nfs-common
@@ -188,7 +177,6 @@ configure_nas_drives
 
 echo "NAS drive configuration completed."
 
-# Create a Systemd Service for Drive Discovery
 echo "Creating systemd service for drive discovery..."
 
 cat << EOF > /etc/systemd/system/discover-drives.service
@@ -220,7 +208,6 @@ systemctl start discover-drives.service
 
 echo "Drive discovery service created and started."
 
-# Setup Udev Rule for Handling Drive Swaps
 echo "Setting up udev rule for handling drive swaps..."
 
 cat << EOF > /etc/udev/rules.d/99-driveswap.rules
@@ -259,9 +246,7 @@ udevadm trigger
 
 echo "Drive swap handling configured."
 
-# Customize Login Experience with MOTD and Issue Messages
 
-# Customizing /etc/issue for Local Login
 echo "Customizing /etc/issue for local login..."
 cat << EOF | sudo tee /etc/issue
 $logo
@@ -271,7 +256,6 @@ Please ensure your audio interface is connected.
 **************************************************
 EOF
 
-# Customizing /etc/issue.net for SSH Login
 echo "Customizing /etc/issue.net for SSH login..."
 cat << EOF | sudo tee /etc/issue.net
 $logo
@@ -282,7 +266,6 @@ before starting remote sessions.
 **************************************************
 EOF
 
-# Customizing /etc/motd for Static Message
 echo "Customizing /etc/motd..."
 cat << EOF | sudo tee /etc/motd
 $logo
@@ -292,12 +275,10 @@ Enjoy your audio production session.
 **************************************************
 EOF
 
-# Creating Custom Dynamic MOTD Script
 echo "Creating custom dynamic MOTD script..."
 sudo cat << EOF | sudo tee /etc/update-motd.d/99-audio-pc
 #!/bin/bash
 
-# Function to retrieve public IP address
 get_public_ip() {
     curl -s https://api.ipify.org
 }
@@ -321,9 +302,7 @@ echo " - Real-Time Priority: \$(ulimit -r)"
 echo "***************************************************"
 EOF
 
-# Make the dynamic MOTD script executable
 sudo chmod +x /etc/update-motd.d/99-audio-pc
 
-# Final Message
 echo "Setup complete! Your Advanced Audio PC login experience is now personalized."
 echo "You can remotely access this machine using the public IP: $PUBLIC_IP"
