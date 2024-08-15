@@ -21,7 +21,22 @@ cleanup_fstab() {
     done
 }
 
-# Function to discover and mount drives
+# Function to manually test drive mounting before adding to /etc/fstab
+test_drive_mount() {
+    UUID=$1
+    MOUNTPOINT=$2
+    echo "Testing mount for UUID=$UUID at $MOUNTPOINT..."
+    
+    # Attempt to mount the drive
+    if sudo mount UUID=$UUID $MOUNTPOINT; then
+        echo "Mount successful. Unmounting now..."
+        sudo umount $MOUNTPOINT
+    else
+        echo "Mount failed for UUID=$UUID. Please check the UUID and try again."
+    fi
+}
+
+# Function to discover and mount drives with nofail option
 discover_drives() {
     lsblk -o UUID,NAME,FSTYPE,SIZE,MOUNTPOINT | grep -v "loop" | grep -v "SWAP" | grep -v "\[SWAP\]" | while read -r line; do
         UUID=$(echo $line | awk '{print $1}')
@@ -31,10 +46,14 @@ discover_drives() {
         if [ ! -z "$UUID" ] && [ "$FSTYPE" != "" ]; then
             MOUNTPOINT="/mnt/$NAME"
             mkdir -p "$MOUNTPOINT"
+            
+            # Test the drive mount before adding it to fstab
+            test_drive_mount "$UUID" "$MOUNTPOINT"
+            
             # Check if the entry already exists in /etc/fstab
             if ! grep -qs "UUID=$UUID" /etc/fstab; then
-                echo "Adding new entry to /etc/fstab: UUID=$UUID $MOUNTPOINT $FSTYPE defaults 0 2"
-                echo "UUID=$UUID $MOUNTPOINT $FSTYPE defaults 0 2" >> /etc/fstab
+                echo "Adding new entry to /etc/fstab: UUID=$UUID $MOUNTPOINT $FSTYPE defaults,nofail 0 2"
+                echo "UUID=$UUID $MOUNTPOINT $FSTYPE defaults,nofail 0 2" >> /etc/fstab
             else
                 echo "Entry for UUID=$UUID already exists in /etc/fstab. Skipping."
             fi
@@ -201,7 +220,7 @@ configure_nas_drives() {
             MOUNTPOINT="/mnt/nfs/$(basename $NAS_PATH)"
             mkdir -p "$MOUNTPOINT"
             if ! grep -qs "$NAS_PATH" /etc/fstab; then
-                echo "$NAS_PATH $MOUNTPOINT nfs defaults 0 0" >> /etc/fstab
+                echo "$NAS_PATH $MOUNTPOINT nfs defaults,nofail 0 0" >> /etc/fstab
             fi
         done
     else
@@ -220,7 +239,7 @@ configure_nas_drives() {
                 read -p "Enter username for $NAS_PATH: " NAS_USERNAME
                 read -sp "Enter password for $NAS_PATH: " NAS_PASSWORD
                 echo
-                echo "$NAS_PATH $MOUNTPOINT cifs username=$NAS_USERNAME,password=$NAS_PASSWORD,iocharset=utf8,sec=ntlm 0 0" >> /etc/fstab
+                echo "$NAS_PATH $MOUNTPOINT cifs username=$NAS_USERNAME,password=$NAS_PASSWORD,iocharset=utf8,sec=ntlm,nofail 0 0" >> /etc/fstab
             fi
         done
     else
@@ -291,7 +310,7 @@ lsblk -o UUID,NAME,FSTYPE,SIZE,MOUNTPOINT | grep -v "loop" | grep -v "SWAP" | gr
         sed -i "\|$MOUNTPOINT|d" /etc/fstab
         
         # Add new entry
-        echo "UUID=\$UUID \$MOUNTPOINT \$FSTYPE defaults 0 2" >> /etc/fstab
+        echo "UUID=\$UUID \$MOUNTPOINT \$FSTYPE defaults,nofail 0 2" >> /etc/fstab
     fi
 done
 
@@ -329,8 +348,7 @@ echo "Low Latency Kernel: \$(uname -r | grep -q lowlatency && echo Yes || echo N
 echo "***************************************************"
 echo "$logo"
 echo "***************************************************"
-echo "Advanced Audio Playback PC - Welcome!"
-echo "Enjoy your high-fidelity audio playback experience with Roon."
+echo "Enjoy your high-fidelity audio playback experience."
 echo "***************************************************"
 EOF
 
