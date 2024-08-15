@@ -97,36 +97,47 @@ systemctl enable getty@tty1.service
 
 echo "Auto-login enabled for user $USERNAME."
 
-# Install Remmina and Setup Permanent Connection Info
-echo "Installing Remmina and setting up permanent connection info..."
+# Install Remmina and Setup for Remote Access
+echo "Installing Remmina and setting up remote access..."
 
 check_install remmina
 check_install remmina-plugin-rdp
+check_install xrdp
+
+# Configure XRDP to allow remote RDP connections
+sudo systemctl enable xrdp
+sudo systemctl start xrdp
+
+# Fetch the public IP address
+PUBLIC_IP=$(curl -s https://api.ipify.org)
 
 REMOTEDIR="/home/$USERNAME/.local/share/remmina"
 mkdir -p "$REMOTEDIR"
-cat << EOF > "$REMOTEDIR/YourRemoteServerName.remmina"
+cat << EOF > "$REMOTEDIR/Remote-Access.remmina"
 [remmina]
-group=
-name=YourRemoteServerName
+group=Remote Connections
+name=Remote Access to Advanced Audio PC
 protocol=RDP
-server=your.dynamic.dns.or.hostname:3389
-username=your_remote_username
-password=your_remote_password
+server=$PUBLIC_IP:3389
+username=$USERNAME
+password=
 domain=
 resolution_mode=0
-color_depth=8
+color_depth=32
 glyph-cache=true
 precommand=
 postcommand=
-disableclipboard=true
-disableserverbackground=true
-disablemenuanimations=true
-disabletheming=true
-disablefullwindowdrag=true
+disableclipboard=false
+disableserverbackground=false
+disablemenuanimations=false
+disabletheming=false
+disablefullwindowdrag=false
 EOF
 
-echo "Remmina installed and connection info set up."
+# Fix permissions
+chown -R $USERNAME:$USERNAME "$REMOTEDIR"
+
+echo "Remmina installed and remote access configured using public IP: $PUBLIC_IP"
 
 # Detect and Configure NAS Drives
 echo "Detecting and configuring NAS drives..."
@@ -315,3 +326,4 @@ sudo chmod +x /etc/update-motd.d/99-audio-pc
 
 # Final Message
 echo "Setup complete! Your Advanced Audio PC login experience is now personalized."
+echo "You can remotely access this machine using the public IP: $PUBLIC_IP"
