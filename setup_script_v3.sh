@@ -64,6 +64,33 @@ discover_drives() {
     mount -a
 }
 
+# Function to detect incompatible drive formats
+check_incompatible_formats() {
+    incompatible_drives=()
+    compatible_formats=("ext4" "ntfs" "exfat" "vfat" "btrfs" "xfs")
+
+    lsblk -o NAME,FSTYPE | grep -v "loop" | grep -v "SWAP" | grep -v "\[SWAP\]" | while read -r line; do
+        NAME=$(echo $line | awk '{print $1}')
+        FSTYPE=$(echo $line | awk '{print $2}')
+
+        if [ ! -z "$FSTYPE" ]; then
+            if [[ ! " ${compatible_formats[@]} " =~ " ${FSTYPE} " ]]; then
+                incompatible_drives+=("$NAME ($FSTYPE)")
+            fi
+        fi
+    done
+
+    if [ ${#incompatible_drives[@]} -ne 0 ]; then
+        echo "Incompatible drive formats detected: ${incompatible_drives[@]}"
+        echo "WARNING: The following drives have incompatible formats: ${incompatible_drives[@]}" > /etc/motd.incompatible_drives
+    else
+        echo "" > /etc/motd.incompatible_drives
+    fi
+}
+
+# Run the incompatible format check
+check_incompatible_formats
+
 # Install packages in parallel for efficiency
 packages=("cpufrequtils" "glances" "fail2ban" "remmina" "remmina-plugin-rdp" "xrdp" "nfs-common" "cifs-utils" "smbclient" "alsa-utils" "pulseaudio")
 echo "Installing necessary packages in parallel..."
@@ -159,6 +186,16 @@ backend = %(syslog_backend)s
 maxretry = 5
 EOF
 sudo systemctl restart fail2ban
+
+# MOTD Cleanup: Disable and remove older MOTD scripts
+echo "Cleaning up old MOTD components..."
+sudo rm -f /etc/motd
+sudo rm -f /run/motd.dynamic
+sudo chmod -x /etc/update-motd.d/*
+
+# Setup script cleanup: Remove older setup scripts in the same directory
+echo "Cleaning up older setup scripts..."
+find $(dirname "$0") -name "setup_audio_pc*.sh" -not -name "$(basename "$0")" -exec rm -f {} \;
 
 # Create the custom ASCII logo
 logo="
@@ -384,10 +421,6 @@ echo "Drive swap handling configured."
 
 # Customize Login Experience with MOTD and Issue Messages
 
-# Disable Default MOTD Components
-echo "Disabling default Ubuntu MOTD components..."
-sudo chmod -x /etc/update-motd.d/*
-
 # Create Custom MOTD Script
 echo "Creating custom MOTD script..."
 sudo cat << EOF > /etc/update-motd.d/99-custom-motd
@@ -403,11 +436,12 @@ echo "***************************************************"
 echo "Roon Server Status: \$(systemctl is-active roonserver)"
 echo "CPU Governor: \$(cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor | uniq)"
 echo "Low Latency Kernel: \$(uname -r | grep -q lowlatency && echo Yes || echo No)"
+cat /etc/motd.incompatible_drives
 echo "***************************************************"
 echo "$logo"
 echo "***************************************************"
 echo "Advanced Audio Playback PC - Welcome!"
-echo "Enjoy your high-fidelity audio playback experience."
+echo "Enjoy your high-fidelity audio playback experience with Roon."
 echo "***************************************************"
 EOF
 
@@ -429,3 +463,7 @@ echo "ALSA and PulseAudio configured."
 echo "Setup complete! Your Advanced Audio PC login experience is now personalized."
 echo "You can remotely access this machine using the public IP: $PUBLIC_IP"
 echo "A reboot is required to apply power management settings."
+
+# Delete the script itself
+echo "Deleting the setup script..."
+rm -- "$0"
