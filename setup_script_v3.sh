@@ -426,6 +426,63 @@ udevadm trigger
 
 echo "Drive swap handling configured."
 
+# Improving Hot-Plug USB Drive Handling
+echo "Improving hot-plug USB drive handling..."
+
+cat << EOF > /etc/udev/rules.d/99-usb-hotplug.rules
+KERNEL=="sd[a-z]*", SUBSYSTEM=="block", ACTION=="add", RUN+="/usr/local/bin/handle-usb-mount.sh"
+KERNEL=="sd[a-z]*", SUBSYSTEM=="block", ACTION=="remove", RUN+="/usr/local/bin/handle-usb-unmount.sh"
+EOF
+
+cat << EOF > /usr/local/bin/handle-usb-mount.sh
+#!/bin/bash
+PARTITION=\$(basename \$DEVNAME)
+MOUNTPOINT="/mnt/usb_\$PARTITION"
+mkdir -p \$MOUNTPOINT
+mount /dev/\$PARTITION \$MOUNTPOINT
+echo "\$(date): Mounted USB drive \$PARTITION at \$MOUNTPOINT" >> /var/log/usb-mount.log
+EOF
+
+cat << EOF > /usr/local/bin/handle-usb-unmount.sh
+#!/bin/bash
+PARTITION=\$(basename \$DEVNAME)
+MOUNTPOINT="/mnt/usb_\$PARTITION"
+umount \$MOUNTPOINT
+rm -rf \$MOUNTPOINT
+echo "\$(date): Unmounted USB drive \$PARTITION from \$MOUNTPOINT" >> /var/log/usb-mount.log
+EOF
+
+chmod +x /usr/local/bin/handle-usb-mount.sh
+chmod +x /usr/local/bin/handle-usb-unmount.sh
+
+udevadm control --reload-rules
+udevadm trigger
+
+echo "Hot-plug USB drive handling improved."
+
+# Detect and Configure Audio Interfaces
+echo "Detecting and configuring connected audio interfaces..."
+
+if aplay -l | grep -i 'Audio'; then
+    echo "Audio interface detected. Configuring as the default..."
+    # Setup and prioritize detected audio interfaces
+    DEFAULT_CARD=$(aplay -l | grep -i 'Audio' | head -n 1 | awk -F '\:' '{print $2}' | awk '{print $1}')
+    echo "defaults.pcm.card $DEFAULT_CARD" | sudo tee -a /etc/asound.conf
+    echo "defaults.ctl.card $DEFAULT_CARD" | sudo tee -a /etc/asound.conf
+else
+    echo "No audio interfaces detected."
+fi
+
+# Network Tuning for Specific NICs
+echo "Applying network tuning based on NIC type..."
+
+NIC=$(lspci | grep -i ethernet | awk '{print $5}')
+if [[ "$NIC" == "Intel" ]]; then
+    echo "Applying Intel-specific NIC optimizations..."
+    sudo ethtool -G eth0 rx 4096 tx 4096
+    sudo ethtool -C eth0 rx-usecs 0
+fi
+
 # Customize Login Experience with MOTD and Issue Messages
 
 # Disable Default MOTD Components
