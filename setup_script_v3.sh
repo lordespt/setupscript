@@ -206,11 +206,12 @@ find $(dirname "$0") -name "setup_audio_pc*.sh" -not -name "$(basename "$0")" -e
 # Create the custom ASCII logo
 logo="
   ___    ___  ______  ___________ 
- / _ \  / _ \ | ___ \/  __ \  _  \
+ / _ \  / _ \ | ___ \/  __ \  _  \\
 / /_\ \/ /_\ \| |_/ /| /  \/ | | |
 |  _  ||  _  ||  __/ | |   | | | |
 | | | || | | || |    | \__/\ |/ / 
-\_| |_/\_| |_/\_|     \____/___/                                   
+\_| |_/\_| |_/\_|     \____/___/  
+                                  
                                   
 Advanced Audio PC Distribution
 Maintained by lordepst
@@ -446,7 +447,7 @@ echo "***************************************************"
 echo "$logo"
 echo "***************************************************"
 echo "Advanced Audio Playback PC - Welcome!"
-echo "Enjoy your high-fidelity audio playback experience."
+echo "Enjoy your high-fidelity audio playback experience with Roon."
 echo "***************************************************"
 EOF
 
