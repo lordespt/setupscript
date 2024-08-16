@@ -7,24 +7,50 @@ check_install() {
         echo "$PACKAGE is already installed, skipping installation."
     else
         echo "Installing $PACKAGE..."
-        apt-get install -y $PACKAGE
+        # Ensure dpkg is in a consistent state
+        sudo dpkg --configure -a
+        sudo apt-get install -f
+        if ! apt-get install -y $PACKAGE; then
+            echo "Failed to install $PACKAGE. Please check your package manager status."
+            exit 1
+        fi
     fi
 }
 
-# Function to clean up stale /etc/fstab entries
+# Function to clean up stale /etc/fstab entries and remove duplicates
 cleanup_fstab() {
+    echo "Backing up /etc/fstab to /etc/fstab.bak before cleanup..."
+    cp /etc/fstab /etc/fstab.bak
+
+    # Remove duplicate entries
+    sort -u /etc/fstab -o /etc/fstab
+
     for uuid in $(grep '^UUID=' /etc/fstab | awk '{print $1}' | cut -d= -f2); do
         if ! lsblk -o UUID | grep -q $uuid; then
             echo "Removing stale /etc/fstab entry for UUID=$uuid"
             sudo sed -i "\|UUID=$uuid|d" /etc/fstab
         fi
     done
+
+    # Validate fstab syntax
+    if ! sudo mount -a; then
+        echo "Error in /etc/fstab detected! Restoring original file."
+        cp /etc/fstab.bak /etc/fstab
+        exit 1
+    fi
 }
 
 # Function to manually test drive mounting before adding to /etc/fstab
 test_drive_mount() {
     UUID=$1
     MOUNTPOINT=$2
+
+    # Validate UUID format (must be 36 characters long for UUID)
+    if [[ ${#UUID} -ne 36 ]]; then
+        echo "Invalid UUID format for $UUID. Skipping."
+        return 1
+    fi
+
     echo "Testing mount for UUID=$UUID at $MOUNTPOINT..."
     
     # Attempt to mount the drive
@@ -32,70 +58,45 @@ test_drive_mount() {
         echo "Mount successful. Unmounting now..."
         sudo umount $MOUNTPOINT
     else
-        echo "Mount failed for UUID=$UUID. Please check the UUID and try again."
+        echo "Mount failed for UUID=$UUID. Please check the UUID, filesystem, and permissions."
+        return 1
     fi
 }
 
-# Function to discover and mount drives with optimized and compatible options
+# Function to discover and mount drives with nofail option, ensuring no duplicates
 discover_drives() {
+    echo "Backing up /etc/fstab to /etc/fstab.bak before modifying..."
+    cp /etc/fstab /etc/fstab.bak
+
+    existing_uuids=$(grep '^UUID=' /etc/fstab | awk '{print $1}' | cut -d= -f2)
     lsblk -o UUID,NAME,FSTYPE,SIZE,MOUNTPOINT | grep -v "loop" | grep -v "SWAP" | grep -v "\[SWAP\]" | while read -r line; do
         UUID=$(echo $line | awk '{print $1}')
         NAME=$(echo $line | awk '{print $2}')
         FSTYPE=$(echo $line | awk '{print $3}')
 
-        if [ ! -z "$UUID" ] && [ "$FSTYPE" != "" ]; then
+        if [ ! -z "$UUID" ] && [ "$FSTYPE" != "" ] && ! echo "$existing_uuids" | grep -qw "$UUID"; then
             MOUNTPOINT="/mnt/$NAME"
             mkdir -p "$MOUNTPOINT"
             
             # Test the drive mount before adding it to fstab
-            test_drive_mount "$UUID" "$MOUNTPOINT"
-            
-            # Set optimized mount options
-            MOUNT_OPTIONS="defaults,noatime,nodiratime,nofail"
-            if [ "$FSTYPE" = "ext4" ] || [ "$FSTYPE" = "btrfs" ] || [ "$FSTYPE" = "xfs" ]; then
-                MOUNT_OPTIONS="$MOUNT_OPTIONS,discard"
-            fi
-            
-            # Check if the entry already exists in /etc/fstab
-            if ! grep -qs "UUID=$UUID" /etc/fstab; then
-                echo "Adding new entry to /etc/fstab: UUID=$UUID $MOUNTPOINT $FSTYPE $MOUNT_OPTIONS 0 2"
-                echo "UUID=$UUID $MOUNTPOINT $FSTYPE $MOUNT_OPTIONS 0 2" >> /etc/fstab
+            if test_drive_mount "$UUID" "$MOUNTPOINT"; then
+                echo "Adding new entry to /etc/fstab: UUID=$UUID $MOUNTPOINT $FSTYPE defaults,nofail 0 2"
+                echo "UUID=$UUID $MOUNTPOINT $FSTYPE defaults,nofail 0 2" >> /etc/fstab
             else
-                echo "Entry for UUID=$UUID already exists in /etc/fstab. Skipping."
+                echo "Skipping adding $UUID to /etc/fstab due to mount failure."
             fi
+        else
+            echo "Entry for UUID=$UUID already exists in /etc/fstab or invalid UUID, skipping."
         fi
     done
 
-    # Mount all drives listed in /etc/fstab
-    mount -a
-}
-
-# Function to detect incompatible drive formats
-check_incompatible_formats() {
-    incompatible_drives=()
-    compatible_formats=("ext4" "ntfs" "exfat" "vfat" "btrfs" "xfs")
-
-    lsblk -o NAME,FSTYPE | grep -v "loop" | grep -v "SWAP" | grep -v "\[SWAP\]" | while read -r line; do
-        NAME=$(echo $line | awk '{print $1}')
-        FSTYPE=$(echo $line | awk '{print $2}')
-
-        if [ ! -z "$FSTYPE" ]; then
-            if [[ ! " ${compatible_formats[@]} " =~ " ${FSTYPE} " ]]; then
-                incompatible_drives+=("$NAME ($FSTYPE)")
-            fi
-        fi
-    done
-
-    if [ ${#incompatible_drives[@]} -ne 0 ]; then
-        echo "Incompatible drive formats detected: ${incompatible_drives[@]}"
-        echo "WARNING: The following drives have incompatible formats: ${incompatible_drives[@]}" > /etc/motd.incompatible_drives
-    else
-        echo "" > /etc/motd.incompatible_drives
+    # Validate fstab syntax
+    if ! sudo mount -a; then
+        echo "Error in /etc/fstab detected after modification! Restoring original file."
+        cp /etc/fstab.bak /etc/fstab
+        exit 1
     fi
 }
-
-# Run the incompatible format check
-check_incompatible_formats
 
 # Install packages in parallel for efficiency
 packages=("cpufrequtils" "glances" "fail2ban" "remmina" "remmina-plugin-rdp" "xrdp" "nfs-common" "cifs-utils" "smbclient" "alsa-utils" "pulseaudio")
@@ -177,9 +178,15 @@ sudo chmod +x /etc/rc.local
 
 # SSH Hardening
 echo "Hardening SSH configuration..."
-sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
-sudo sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
-sudo systemctl restart sshd
+
+# Ensure SSH keys are set up before disabling password auth
+if [ ! -f ~/.ssh/authorized_keys ]; then
+    echo "Warning: No SSH keys found in ~/.ssh/authorized_keys. SSH password authentication will remain enabled."
+else
+    sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+    sudo sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+    sudo systemctl restart sshd
+fi
 
 # Configure Fail2Ban for SSH protection
 echo "Configuring Fail2Ban for SSH protection..."
@@ -192,16 +199,6 @@ backend = %(syslog_backend)s
 maxretry = 5
 EOF
 sudo systemctl restart fail2ban
-
-# MOTD Cleanup: Disable and remove older MOTD scripts
-echo "Cleaning up old MOTD components..."
-sudo rm -f /etc/motd
-sudo rm -f /run/motd.dynamic
-sudo chmod -x /etc/update-motd.d/*
-
-# Setup script cleanup: Remove older setup scripts in the same directory
-echo "Cleaning up older setup scripts..."
-find $(dirname "$0") -name "setup_audio_pc*.sh" -not -name "$(basename "$0")" -exec rm -f {} \;
 
 # Create the custom ASCII logo
 logo="
@@ -321,7 +318,7 @@ configure_nas_drives() {
             MOUNTPOINT="/mnt/nfs/$(basename $NAS_PATH)"
             mkdir -p "$MOUNTPOINT"
             if ! grep -qs "$NAS_PATH" /etc/fstab; then
-                echo "$NAS_PATH $MOUNTPOINT nfs defaults,nofail,noatime,nodiratime 0 0" >> /etc/fstab
+                echo "$NAS_PATH $MOUNTPOINT nfs defaults,nofail 0 0" >> /etc/fstab
             fi
         done
     else
@@ -340,7 +337,7 @@ configure_nas_drives() {
                 read -p "Enter username for $NAS_PATH: " NAS_USERNAME
                 read -sp "Enter password for $NAS_PATH: " NAS_PASSWORD
                 echo
-                echo "$NAS_PATH $MOUNTPOINT cifs username=$NAS_USERNAME,password=$NAS_PASSWORD,iocharset=utf8,sec=ntlm,nofail,noatime,nodiratime 0 0" >> /etc/fstab
+                echo "$NAS_PATH $MOUNTPOINT cifs username=$NAS_USERNAME,password=$NAS_PASSWORD,iocharset=utf8,sec=ntlm,nofail 0 0" >> /etc/fstab
             fi
         done
     else
@@ -361,10 +358,13 @@ cat << EOF > /etc/systemd/system/discover-drives.service
 [Unit]
 Description=Discover and mount drives (HDD/SSD/NAS)
 After=network-online.target
+Wants=network-online.target
 
 [Service]
 ExecStart=/usr/local/bin/discover-drives.sh
 Restart=on-failure
+StandardOutput=journal+console
+StandardError=journal+console
 
 [Install]
 WantedBy=multi-user.target
@@ -396,7 +396,8 @@ EOF
 cat << EOF > /usr/local/bin/handle-drive-swap.sh
 #!/bin/bash
 
-echo "\$(date): Detected drive change: \$ACTION on \$DEVNAME" >> /var/log/drive-swap.log
+exec >> /var/log/drive-swap.log 2>&1
+echo "\$(date): Detected drive change: \$ACTION on \$DEVNAME"
 
 lsblk -o UUID,NAME,FSTYPE,SIZE,MOUNTPOINT | grep -v "loop" | grep -v "SWAP" | grep -v "\[SWAP\]" | while read -r line; do
     UUID=\$(echo \$line | awk '{print \$1}')
@@ -411,7 +412,7 @@ lsblk -o UUID,NAME,FSTYPE,SIZE,MOUNTPOINT | grep -v "loop" | grep -v "SWAP" | gr
         sed -i "\|$MOUNTPOINT|d" /etc/fstab
         
         # Add new entry
-        echo "UUID=\$UUID \$MOUNTPOINT \$FSTYPE defaults,nofail,noatime,nodiratime 0 2" >> /etc/fstab
+        echo "UUID=\$UUID \$MOUNTPOINT \$FSTYPE defaults,nofail 0 2" >> /etc/fstab
     fi
 done
 
@@ -426,6 +427,10 @@ udevadm trigger
 echo "Drive swap handling configured."
 
 # Customize Login Experience with MOTD and Issue Messages
+
+# Disable Default MOTD Components
+echo "Disabling default Ubuntu MOTD components..."
+sudo chmod -x /etc/update-motd.d/*
 
 # Create Custom MOTD Script
 echo "Creating custom MOTD script..."
@@ -442,7 +447,6 @@ echo "***************************************************"
 echo "Roon Server Status: \$(systemctl is-active roonserver)"
 echo "CPU Governor: \$(cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor | uniq)"
 echo "Low Latency Kernel: \$(uname -r | grep -q lowlatency && echo Yes || echo No)"
-cat /etc/motd.incompatible_drives
 echo "***************************************************"
 echo "$logo"
 echo "***************************************************"
@@ -469,7 +473,3 @@ echo "ALSA and PulseAudio configured."
 echo "Setup complete! Your Advanced Audio PC login experience is now personalized."
 echo "You can remotely access this machine using the public IP: $PUBLIC_IP"
 echo "A reboot is required to apply power management settings."
-
-# Delete the script itself
-echo "Deleting the setup script..."
-rm -- "$0"
