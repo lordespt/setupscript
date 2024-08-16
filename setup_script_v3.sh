@@ -36,7 +36,7 @@ test_drive_mount() {
     fi
 }
 
-# Function to discover and mount drives with nofail option
+# Function to discover and mount drives with optimized and compatible options
 discover_drives() {
     lsblk -o UUID,NAME,FSTYPE,SIZE,MOUNTPOINT | grep -v "loop" | grep -v "SWAP" | grep -v "\[SWAP\]" | while read -r line; do
         UUID=$(echo $line | awk '{print $1}')
@@ -50,10 +50,16 @@ discover_drives() {
             # Test the drive mount before adding it to fstab
             test_drive_mount "$UUID" "$MOUNTPOINT"
             
+            # Set optimized mount options
+            MOUNT_OPTIONS="defaults,noatime,nodiratime,nofail"
+            if [ "$FSTYPE" = "ext4" ] || [ "$FSTYPE" = "btrfs" ] || [ "$FSTYPE" = "xfs" ]; then
+                MOUNT_OPTIONS="$MOUNT_OPTIONS,discard"
+            fi
+            
             # Check if the entry already exists in /etc/fstab
             if ! grep -qs "UUID=$UUID" /etc/fstab; then
-                echo "Adding new entry to /etc/fstab: UUID=$UUID $MOUNTPOINT $FSTYPE defaults,nofail 0 2"
-                echo "UUID=$UUID $MOUNTPOINT $FSTYPE defaults,nofail 0 2" >> /etc/fstab
+                echo "Adding new entry to /etc/fstab: UUID=$UUID $MOUNTPOINT $FSTYPE $MOUNT_OPTIONS 0 2"
+                echo "UUID=$UUID $MOUNTPOINT $FSTYPE $MOUNT_OPTIONS 0 2" >> /etc/fstab
             else
                 echo "Entry for UUID=$UUID already exists in /etc/fstab. Skipping."
             fi
@@ -200,12 +206,11 @@ find $(dirname "$0") -name "setup_audio_pc*.sh" -not -name "$(basename "$0")" -e
 # Create the custom ASCII logo
 logo="
   ___    ___  ______  ___________ 
- / _ \  / _ \ | ___ \/  __ \  _  \\
+ / _ \  / _ \ | ___ \/  __ \  _  \
 / /_\ \/ /_\ \| |_/ /| /  \/ | | |
 |  _  ||  _  ||  __/ | |   | | | |
 | | | || | | || |    | \__/\ |/ / 
-\_| |_/\_| |_/\_|     \____/___/  
-                                  
+\_| |_/\_| |_/\_|     \____/___/                                   
                                   
 Advanced Audio PC Distribution
 Maintained by lordepst
@@ -315,7 +320,7 @@ configure_nas_drives() {
             MOUNTPOINT="/mnt/nfs/$(basename $NAS_PATH)"
             mkdir -p "$MOUNTPOINT"
             if ! grep -qs "$NAS_PATH" /etc/fstab; then
-                echo "$NAS_PATH $MOUNTPOINT nfs defaults,nofail 0 0" >> /etc/fstab
+                echo "$NAS_PATH $MOUNTPOINT nfs defaults,nofail,noatime,nodiratime 0 0" >> /etc/fstab
             fi
         done
     else
@@ -334,7 +339,7 @@ configure_nas_drives() {
                 read -p "Enter username for $NAS_PATH: " NAS_USERNAME
                 read -sp "Enter password for $NAS_PATH: " NAS_PASSWORD
                 echo
-                echo "$NAS_PATH $MOUNTPOINT cifs username=$NAS_USERNAME,password=$NAS_PASSWORD,iocharset=utf8,sec=ntlm,nofail 0 0" >> /etc/fstab
+                echo "$NAS_PATH $MOUNTPOINT cifs username=$NAS_USERNAME,password=$NAS_PASSWORD,iocharset=utf8,sec=ntlm,nofail,noatime,nodiratime 0 0" >> /etc/fstab
             fi
         done
     else
@@ -405,7 +410,7 @@ lsblk -o UUID,NAME,FSTYPE,SIZE,MOUNTPOINT | grep -v "loop" | grep -v "SWAP" | gr
         sed -i "\|$MOUNTPOINT|d" /etc/fstab
         
         # Add new entry
-        echo "UUID=\$UUID \$MOUNTPOINT \$FSTYPE defaults,nofail 0 2" >> /etc/fstab
+        echo "UUID=\$UUID \$MOUNTPOINT \$FSTYPE defaults,nofail,noatime,nodiratime 0 2" >> /etc/fstab
     fi
 done
 
@@ -441,7 +446,7 @@ echo "***************************************************"
 echo "$logo"
 echo "***************************************************"
 echo "Advanced Audio Playback PC - Welcome!"
-echo "Enjoy your high-fidelity audio playback experience with Roon."
+echo "Enjoy your high-fidelity audio playback experience."
 echo "***************************************************"
 EOF
 
