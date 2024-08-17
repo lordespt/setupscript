@@ -37,6 +37,11 @@ essential_packages=(
     "ffmpeg"
     "libavcodec-extra"
     "libavutil-dev"
+    "pulseaudio"
+    "alsa-utils"
+    "ssh"
+    "ethtool"
+    "fail2ban"
 )
 
 echo "Installing essential packages..."
@@ -509,7 +514,7 @@ END_SCRIPT
 }
 
 # Install packages in parallel for efficiency
-packages=("cpufrequtils" "glances" "fail2ban" "remmina" "remmina-plugin-rdp" "xrdp" "nfs-common" "cifs-utils" "smbclient" "alsa-utils" "pulseaudio" "unattended-upgrades" "monit" "auto-cpufreq")
+packages=("cpufrequtils" "glances" "remmina" "remmina-plugin-rdp" "xrdp" "nfs-common" "cifs-utils" "smbclient" "unattended-upgrades" "monit" "auto-cpufreq")
 echo "Installing necessary packages in parallel..."
 sudo apt-get install -y ${packages[@]} &
 wait
@@ -636,7 +641,7 @@ include /etc/monit/conf-enabled/*
 
 check process roonserver with pidfile /var/run/roonserver.pid
     start program = "/etc/init.d/roonserver start"
-    stop program = "/etc/init.d/roonserver stop"
+    stop program  = "/etc/init.d/roonserver stop"
     if failed port 9100 protocol http then restart
     if 5 restarts within 5 cycles then timeout
 EOF
