@@ -5,7 +5,6 @@ check_install() {
     PACKAGE=$1
     if ! dpkg -l | grep -q "$PACKAGE"; then
         echo "Installing $PACKAGE..."
-        # Ensure dpkg is in a consistent state
         sudo dpkg --configure -a
         sudo apt-get install -f
         if ! apt-get install -y $PACKAGE; then
@@ -41,7 +40,7 @@ essential_packages=(
     "cpufrequtils"
     "ethtool"
     "openssh-server"
-    "udisks2"  # Handles drive automounting and management
+    "udisks2"
     "nfs-common"
     "cifs-utils"
     "smbclient"
@@ -179,13 +178,32 @@ sudo systemctl restart fail2ban
 echo "Enabling unattended upgrades for security patches..."
 sudo dpkg-reconfigure --priority=low unattended-upgrades
 
-# Auto-mount for drives using udisks2
-echo "Configuring auto-mount for drives..."
-sudo tee /etc/udev/rules.d/99-local.rules > /dev/null <<EOF
-KERNEL=="sd[a-z][0-9]", ACTION=="add", ENV{ID_FS_TYPE}=="ntfs|vfat|ext4", RUN+="/usr/bin/udisksctl mount -b %N"
-EOF
-sudo udevadm control --reload-rules
-sudo udevadm trigger
+# Robust Auto-Mount for drives using fstab configuration
+echo "Configuring robust auto-mount for drives..."
+sudo cp /etc/fstab /etc/fstab.backup  # Backup current fstab
+
+# Function to add a drive to /etc/fstab
+add_to_fstab() {
+    UUID=$1
+    MOUNTPOINT=$2
+    FSTYPE=$3
+
+    # Check if the UUID already exists in /etc/fstab
+    if ! grep -q "UUID=$UUID" /etc/fstab; then
+        echo "UUID=$UUID $MOUNTPOINT $FSTYPE defaults,nofail,x-systemd.automount,x-systemd.device-timeout=5 0 2" | sudo tee -a /etc/fstab
+    else
+        echo "Drive with UUID $UUID already exists in /etc/fstab. Skipping."
+    fi
+}
+
+# Get details of all the drives and add to fstab if not already present
+lsblk -o UUID,NAME,FSTYPE,SIZE,MOUNTPOINT | grep -v 'loop\|NAME' | while read uuid name fstype size mountpoint; do
+    if [ -z "$mountpoint" ] && [ "$fstype" != "" ]; then
+        MOUNTPOINT="/mnt/$name"
+        sudo mkdir -p $MOUNTPOINT
+        add_to_fstab $uuid $MOUNTPOINT $fstype
+    fi
+done
 
 # Auto-login setup
 echo "Enabling auto-login..."
@@ -200,22 +218,14 @@ sudo systemctl enable getty@tty1.service
 
 # Custom MOTD setup
 logo="
-
-
-
   ___    ___  ______  ___________ 
- / _ \  / _ \ | ___ \/  __ \  _  \
+ / _ \  / _ \ | ___ \/  __ \  _  \\
 / /_\ \/ /_\ \| |_/ /| /  \/ | | |
 |  _  ||  _  ||  __/ | |   | | | |
 | | | || | | || |    | \__/\ |/ / 
 \_| |_/\_| |_/\_|     \____/___/  
                                   
                                   
-
-
-                                 
-Advanced Audio PC Distribution
-Maintained by lordepst
 "
 
 # Disable Default MOTD Components
