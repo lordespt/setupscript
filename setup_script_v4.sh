@@ -572,16 +572,38 @@ wait
 echo "Installing and configuring auto-cpufreq for dynamic performance tuning..."
 sudo auto-cpufreq --install
 
-# Install and Switch to Low-Latency Kernel
-echo "Installing and switching to the low-latency kernel..."
+# Kernel Selection
+echo "Select the kernel you want to use:"
+echo "1) Low-latency kernel (recommended for most audio setups)"
+echo "2) Real-time kernel (recommended for critical low-latency applications)"
+echo "3) Generic kernel (default kernel for general-purpose use)"
+read -p "Enter your choice (1, 2, or 3): " KERNEL_CHOICE
 
-check_install linux-lowlatency
+case $KERNEL_CHOICE in
+    1)
+        KERNEL_PACKAGE="linux-lowlatency"
+        ;;
+    2)
+        KERNEL_PACKAGE="linux-image-$(uname -r | sed 's/generic/rt/g')"
+        ;;
+    3)
+        KERNEL_PACKAGE="linux-generic"
+        ;;
+    *)
+        echo "Invalid choice. Defaulting to low-latency kernel."
+        KERNEL_PACKAGE="linux-lowlatency"
+        ;;
+esac
 
-# Set low-latency kernel as the default
-sudo sed -i 's/GRUB_DEFAULT=0/GRUB_DEFAULT="Advanced options for Ubuntu>Ubuntu, with Linux lowlatency"/g' /etc/default/grub
+# Install and Switch to Selected Kernel
+echo "Installing and switching to the selected kernel: $KERNEL_PACKAGE..."
+check_install $KERNEL_PACKAGE
+
+# Set selected kernel as the default
+sudo sed -i "s/GRUB_DEFAULT=0/GRUB_DEFAULT=\"Advanced options for Ubuntu>Ubuntu, with Linux $KERNEL_PACKAGE\"/g" /etc/default/grub
 sudo update-grub
 
-echo "Low-latency kernel installed and set as default."
+echo "$KERNEL_PACKAGE installed and set as default."
 
 # Optimize CPU Performance
 echo "Optimizing CPU performance by setting the governor to 'performance'..."
