@@ -179,8 +179,30 @@ sudo systemctl restart fail2ban
 echo "Enabling unattended upgrades for security patches..."
 sudo dpkg-reconfigure --priority=low unattended-upgrades
 
+# Auto-mount for drives using udisks2
+echo "Configuring auto-mount for drives..."
+sudo tee /etc/udev/rules.d/99-local.rules > /dev/null <<EOF
+KERNEL=="sd[a-z][0-9]", ACTION=="add", ENV{ID_FS_TYPE}=="ntfs|vfat|ext4", RUN+="/usr/bin/udisksctl mount -b %N"
+EOF
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+
+# Auto-login setup
+echo "Enabling auto-login..."
+USERNAME="aserver"  # Replace with the actual username
+sudo mkdir -p /etc/systemd/system/getty@tty1.service.d
+sudo tee /etc/systemd/system/getty@tty1.service.d/override.conf > /dev/null <<EOF
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin $USERNAME --noclear %I \$TERM
+EOF
+sudo systemctl enable getty@tty1.service
+
 # Custom MOTD setup
 logo="
+
+
+
   ___    ___  ______  ___________ 
  / _ \  / _ \ | ___ \/  __ \  _  \
 / /_\ \/ /_\ \| |_/ /| /  \/ | | |
@@ -189,6 +211,9 @@ logo="
 \_| |_/\_| |_/\_|     \____/___/  
                                   
                                   
+
+
+                                 
 Advanced Audio PC Distribution
 Maintained by lordepst
 "
@@ -199,7 +224,7 @@ sudo chmod -x /etc/update-motd.d/*
 
 # Create Custom MOTD Script
 echo "Creating custom MOTD script..."
-sudo cat << EOF > /etc/update-motd.d/99-custom-motd
+sudo tee /etc/update-motd.d/99-custom-motd > /dev/null <<EOF
 #!/bin/bash
 
 echo "***************************************************"
