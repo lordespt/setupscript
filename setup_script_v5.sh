@@ -41,6 +41,7 @@ essential_packages=(
     "cpufrequtils"
     "ethtool"
     "openssh-server"
+    "udisks2"  # Handles drive automounting and management
     "nfs-common"
     "cifs-utils"
     "smbclient"
