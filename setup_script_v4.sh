@@ -40,7 +40,6 @@ essential_packages=(
     "sudo"
     "gzip"
     "cpufrequtils"
-    "auto-cpufreq"
     "ethtool"
     "openssh-server"
     "nfs-common"
@@ -67,6 +66,9 @@ echo "Installing essential packages..."
 for pkg in "${essential_packages[@]}"; do
     check_install $pkg
 done
+
+echo "Installing auto-cpufreq using snap..."
+sudo snap install auto-cpufreq
 
 # Ensure rpcbind service is running
 sudo systemctl enable rpcbind
