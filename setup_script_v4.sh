@@ -56,7 +56,6 @@ essential_packages=(
     "fail2ban"
     "monit"
     "unattended-upgrades"
-    "tune2fs"
     "btrfs-progs"  # Only if using BTRFS for Roon Database
     "zfsutils-linux"  # Only if using ZFS for Roon Database
     "snapd"  # Needed for installing snap packages
