@@ -7,7 +7,6 @@ check_install() {
         echo "$PACKAGE is already installed, skipping installation."
     else
         echo "Installing $PACKAGE..."
-        # Ensure dpkg is in a consistent state
         sudo dpkg --configure -a
         sudo apt-get install -f
         if ! apt-get install -y $PACKAGE; then
@@ -17,86 +16,170 @@ check_install() {
     fi
 }
 
-# Function to clean up stale /etc/fstab entries and remove duplicates
-cleanup_fstab() {
-    echo "Backing up /etc/fstab to /etc/fstab.bak before cleanup..."
-    cp /etc/fstab /etc/fstab.bak
+# Function to verify the system's state
+system_check() {
+    echo "Checking system state..."
+    # Ensure the system is fully up to date
+    sudo apt-get update
+    sudo apt-get upgrade -y
 
-    # Remove duplicate entries
-    sort -u /etc/fstab -o /etc/fstab
+    # Verify that all essential directories exist
+    if [ ! -d /mnt ]; then
+        echo "Creating /mnt directory..."
+        sudo mkdir /mnt
+    fi
 
-    for uuid in $(grep '^UUID=' /etc/fstab | awk '{print $1}' | cut -d= -f2); do
-        if ! lsblk -o UUID | grep -q $uuid; then
-            echo "Removing stale /etc/fstab entry for UUID=$uuid"
-            sudo sed -i "\|UUID=$uuid|d" /etc/fstab
-        fi
-    done
-
-    # Validate fstab syntax
-    if ! sudo mount -a; then
-        echo "Error in /etc/fstab detected! Restoring original file."
-        cp /etc/fstab.bak /etc/fstab
-        exit 1
+    if [ ! -d /etc/systemd/system/getty@tty1.service.d ]; then
+        echo "Creating directory for systemd overrides..."
+        sudo mkdir -p /etc/systemd/system/getty@tty1.service.d
     fi
 }
 
-# Function to manually test drive mounting before adding to /etc/fstab
-test_drive_mount() {
-    UUID=$1
-    MOUNTPOINT=$2
+# Run the system check
+system_check
 
-    # Validate UUID format (must be 36 characters long for UUID)
-    if [[ ${#UUID} -ne 36 ]]; then
-        echo "Invalid UUID format for $UUID. Skipping."
-        return 1
-    fi
+# Install required packages in parallel for efficiency
+packages=(
+    "cpufrequtils" "glances" "fail2ban" "remmina" "remmina-plugin-rdp"
+    "xrdp" "nfs-common" "cifs-utils" "smbclient" "alsa-utils" "pulseaudio"
+    "unattended-upgrades" "monit" "auto-cpufreq" "curl" "ethtool"
+)
 
-    echo "Testing mount for UUID=$UUID at $MOUNTPOINT..."
-    
-    # Attempt to mount the drive
-    if sudo mount UUID=$UUID $MOUNTPOINT; then
-        echo "Mount successful. Unmounting now..."
-        sudo umount $MOUNTPOINT
-    else
-        echo "Mount failed for UUID=$UUID. Please check the UUID, filesystem, and permissions."
-        return 1
-    fi
-}
+echo "Installing necessary packages..."
+for package in "${packages[@]}"; do
+    check_install "$package" &
+done
+wait
 
-# Function to discover and mount drives with nofail option, ensuring no duplicates
-discover_drives() {
-    echo "Backing up /etc/fstab to /etc/fstab.bak before modifying..."
-    cp /etc/fstab /etc/fstab.bak
+# Dynamic Performance Tuning with auto-cpufreq
+echo "Installing and configuring auto-cpufreq for dynamic performance tuning..."
+sudo auto-cpufreq --install
 
-    existing_uuids=$(grep '^UUID=' /etc/fstab | awk '{print $1}' | cut -d= -f2)
-    lsblk -o UUID,NAME,FSTYPE,SIZE,MOUNTPOINT | grep -v "loop" | grep -v "SWAP" | grep -v "\[SWAP\]" | while read -r line; do
-        UUID=$(echo $line | awk '{print $1}')
-        NAME=$(echo $line | awk '{print $2}')
-        FSTYPE=$(echo $line | awk '{print $3}')
+# Prompt user for kernel choice
+echo "Select the kernel to install:"
+echo "1) Low Latency Kernel"
+echo "2) Real-Time Kernel"
+read -rp "Enter your choice (1 or 2): " KERNEL_CHOICE
 
-        if [ ! -z "$UUID" ] && [ "$FSTYPE" != "" ] && ! echo "$existing_uuids" | grep -qw "$UUID"; then
-            MOUNTPOINT="/mnt/$NAME"
-            mkdir -p "$MOUNTPOINT"
-            
-            # Test the drive mount before adding it to fstab
-            if test_drive_mount "$UUID" "$MOUNTPOINT"; then
-                echo "Adding new entry to /etc/fstab: UUID=$UUID $MOUNTPOINT $FSTYPE defaults,noatime,nofail 0 2"
-                echo "UUID=$UUID $MOUNTPOINT $FSTYPE defaults,noatime,nofail 0 2" >> /etc/fstab
-            else
-                echo "Skipping adding $UUID to /etc/fstab due to mount failure."
-            fi
-        else
-            echo "Entry for UUID=$UUID already exists in /etc/fstab or invalid UUID, skipping."
-        fi
-    done
+if [ "$KERNEL_CHOICE" == "1" ]; then
+    echo "Installing Low Latency Kernel..."
+    check_install "linux-lowlatency"
+    sudo sed -i 's/GRUB_DEFAULT=0/GRUB_DEFAULT="Advanced options for Ubuntu>Ubuntu, with Linux lowlatency"/g' /etc/default/grub
+elif [ "$KERNEL_CHOICE" == "2" ]; then
+    echo "Installing Real-Time Kernel..."
+    check_install "linux-image-rt"
+    sudo sed -i 's/GRUB_DEFAULT=0/GRUB_DEFAULT="Advanced options for Ubuntu>Ubuntu, with Linux rt"/g' /etc/default/grub
+else
+    echo "Invalid choice. Exiting."
+    exit 1
+fi
 
-    # Validate fstab syntax
-    if ! sudo mount -a; then
-        echo "Error in /etc/fstab detected after modification! Restoring original file."
-        cp /etc/fstab.bak /etc/fstab
-        exit 1
-    fi
-}
+sudo update-grub
+
+# Optimize CPU Performance
+echo "Optimizing CPU performance by setting the governor to 'performance'..."
+echo 'GOVERNOR="performance"' | sudo tee /etc/default/cpufrequtils
+sudo systemctl restart cpufrequtils
+
+# Set I/O Scheduler for SSDs to 'deadline'
+echo "Setting I/O scheduler to deadline for SSDs..."
+for dev in $(lsblk -d -o name,rota | awk '$2==0 {print $1}'); do
+    echo deadline | sudo tee /sys/block/$dev/queue/scheduler
+done
+
+# Disable Unnecessary Power Management
+echo "Disabling unnecessary power management features..."
+sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash intel_pstate=disable"/g' /etc/default/grub
+sudo update-grub
+
+# Reduce Swappiness
+echo "Reducing swappiness to 10..."
+sudo sysctl vm.swappiness=10
+echo "vm.swappiness=10" | sudo tee -a /etc/sysctl.conf
+
+# Disable Swap
+echo "Disabling swap to reduce latency..."
+sudo swapoff -a
+sudo sed -i '/swap/d' /etc/fstab
+
+# Enable Real-Time Audio Scheduling
+echo "Enabling real-time audio scheduling..."
+sudo groupadd -r audio
+sudo usermod -aG audio $USERNAME
+echo "@audio   -  rtprio     99" | sudo tee -a /etc/security/limits.d/audio.conf
+echo "@audio   -  nice      -19" | sudo tee -a /etc/security/limits.d/audio.conf
+echo "@audio   -  memlock    unlimited" | sudo tee -a /etc/security/limits.d/audio.conf
+
+# Increase File Descriptors Limit
+echo "Increasing file descriptors limit..."
+echo "fs.file-max = 2097152" | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
+echo "root soft nofile 2097152" | sudo tee -a /etc/security/limits.conf
+echo "root hard nofile 2097152" | sudo tee -a /etc/security/limits.conf
+
+# Tune Network Interface for Low-Latency Audio Streaming
+echo "Tuning network interface for low-latency audio streaming..."
+sudo ethtool -G eth0 rx 4096 tx 4096
+sudo ethtool -C eth0 rx-usecs 0
+
+# Disable Transparent Huge Pages
+echo "Disabling Transparent Huge Pages (THP)..."
+echo "never" | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+echo "never" | sudo tee /sys/kernel/mm/transparent_hugepage/defrag
+echo 'echo "never" > /sys/kernel/mm/transparent_hugepage/enabled' | sudo tee -a /etc/rc.local
+echo 'echo "never" > /sys/kernel/mm/transparent_hugepage/defrag' | sudo tee -a /etc/rc.local
+sudo chmod +x /etc/rc.local
+
+# SSH Hardening
+echo "Hardening SSH configuration..."
+if [ ! -f ~/.ssh/authorized_keys ]; then
+    echo "Warning: No SSH keys found in ~/.ssh/authorized_keys. SSH password authentication will remain enabled."
+else
+    sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+    sudo sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+    sudo systemctl restart sshd
+fi
+
+# Configure Fail2Ban for SSH protection
+echo "Configuring Fail2Ban for SSH protection..."
+sudo tee /etc/fail2ban/jail.local <<EOF
+[sshd]
+enabled = true
+port    = ssh
+logpath = %(sshd_log)s
+backend = %(syslog_backend)s
+maxretry = 5
+EOF
+sudo systemctl restart fail2ban
+
+# Enable Unattended Upgrades for Security Patches
+echo "Enabling unattended upgrades for security patches..."
+sudo dpkg-reconfigure --priority=low unattended-upgrades
+sudo sed -i '/^Unattended-Upgrade::Origins-Pattern {/a \
+"origin=Debian,codename=${distro_codename},label=Debian-Security";' /etc/apt/apt.conf.d/50unattended-upgrades
+
+# Configure Monitoring with Monit
+echo "Configuring Monit for Roon Server monitoring..."
+sudo tee /etc/monit/monitrc <<EOF
+set daemon 120
+    with start delay 240
+
+set logfile /var/log/monit.log
+
+set idfile /var/lib/monit/id
+set statefile /var/lib/monit/state
+
+include /etc/monit/conf.d/*
+include /etc/monit/conf-enabled/*
+
+check process roonserver with pidfile /var/run/roonserver.pid
+    start program = "/etc/init.d/roonserver start"
+    stop program  = "/etc/init.d/roonserver stop"
+    if failed port 9100 protocol http then restart
+    if 5 restarts within 5 cycles then timeout
+EOF
+
+sudo systemctl restart monit
 
 # Install and configure Roon Server
 install_roon_server() {
@@ -562,191 +645,8 @@ END_SCRIPT
     /tmp/install_roon.sh
 }
 
-# Install packages in parallel for efficiency
-packages=("cpufrequtils" "glances" "fail2ban" "remmina" "remmina-plugin-rdp" "xrdp" "nfs-common" "cifs-utils" "smbclient" "alsa-utils" "pulseaudio" "unattended-upgrades" "monit" "auto-cpufreq")
-echo "Installing necessary packages in parallel..."
-sudo apt-get install -y ${packages[@]} &
-wait
-
-# Dynamic Performance Tuning
-echo "Installing and configuring auto-cpufreq for dynamic performance tuning..."
-sudo auto-cpufreq --install
-
-# Install and Switch to Low-Latency Kernel
-echo "Installing and switching to the low-latency kernel..."
-echo "Please choose the kernel you wish to install:"
-echo "1. Low Latency Kernel"
-echo "2. Real-Time Kernel (for ultra-low latency needs)"
-
-read -p "Enter the number corresponding to your choice: " kernel_choice
-
-case $kernel_choice in
-    1)
-        echo "Installing Low Latency Kernel..."
-        check_install linux-lowlatency
-        sudo sed -i 's/GRUB_DEFAULT=0/GRUB_DEFAULT="Advanced options for Ubuntu>Ubuntu, with Linux lowlatency"/g' /etc/default/grub
-        ;;
-    2)
-        echo "Installing Real-Time Kernel..."
-        check_install linux-image-rt
-        sudo sed -i 's/GRUB_DEFAULT=0/GRUB_DEFAULT="Advanced options for Ubuntu>Ubuntu, with Linux rt"/g' /etc/default/grub
-        ;;
-    *)
-        echo "Invalid choice, defaulting to Low Latency Kernel."
-        check_install linux-lowlatency
-        sudo sed -i 's/GRUB_DEFAULT=0/GRUB_DEFAULT="Advanced options for Ubuntu>Ubuntu, with Linux lowlatency"/g' /etc/default/grub
-        ;;
-esac
-
-sudo update-grub
-echo "Kernel installation and configuration complete."
-
-# Optimize CPU Performance
-echo "Optimizing CPU performance by setting the governor to 'performance'..."
-
-echo 'GOVERNOR="performance"' | sudo tee /etc/default/cpufrequtils
-sudo systemctl restart cpufrequtils
-
-echo "CPU performance optimized."
-
-# Set I/O Scheduler for SSDs to 'deadline'
-echo "Setting I/O scheduler to deadline for SSDs..."
-for dev in $(lsblk -d -o name,rota | awk '$2==0 {print $1}'); do
-    echo deadline | sudo tee /sys/block/$dev/queue/scheduler
-done
-
-# Disable Unnecessary Power Management
-echo "Disabling unnecessary power management features..."
-
-# Update GRUB for Power Management Settings
-sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash intel_pstate=disable"/g' /etc/default/grub
-sudo update-grub
-
-echo "Power management settings updated. A reboot is required to apply these changes."
-
-# Reduce Swappiness
-echo "Reducing swappiness to 10..."
-sudo sysctl vm.swappiness=10
-echo "vm.swappiness=10" | sudo tee -a /etc/sysctl.conf
-
-# Disable Swap
-echo "Disabling swap to reduce latency..."
-sudo swapoff -a
-sudo sed -i '/swap/d' /etc/fstab
-
-# Enable Real-Time Audio Scheduling
-echo "Enabling real-time audio scheduling..."
-sudo groupadd -r audio
-sudo usermod -aG audio $USERNAME
-echo "@audio   -  rtprio     99" | sudo tee -a /etc/security/limits.d/audio.conf
-echo "@audio   -  nice      -19" | sudo tee -a /etc/security/limits.d/audio.conf
-echo "@audio   -  memlock    unlimited" | sudo tee -a /etc/security/limits.d/audio.conf
-
-# Increase File Descriptors Limit
-echo "Increasing file descriptors limit..."
-echo "fs.file-max = 2097152" | sudo tee -a /etc/sysctl.conf
-sudo sysctl -p
-echo "root soft nofile 2097152" | sudo tee -a /etc/security/limits.conf
-echo "root hard nofile 2097152" | sudo tee -a /etc/security/limits.conf
-
-# Tune Network Interface for Low-Latency Audio Streaming
-echo "Tuning network interface for low-latency audio streaming..."
-sudo ethtool -G eth0 rx 4096 tx 4096
-sudo ethtool -C eth0 rx-usecs 0
-
-# Disable Transparent Huge Pages
-echo "Disabling Transparent Huge Pages (THP)..."
-echo "never" | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
-echo "never" | sudo tee /sys/kernel/mm/transparent_hugepage/defrag
-echo 'echo "never" > /sys/kernel/mm/transparent_hugepage/enabled' | sudo tee -a /etc/rc.local
-echo 'echo "never" > /sys/kernel/mm/transparent_hugepage/defrag' | sudo tee -a /etc/rc.local
-sudo chmod +x /etc/rc.local
-
-# SSH Hardening
-echo "Hardening SSH configuration..."
-
-# Ensure SSH keys are set up before disabling password auth
-if [ ! -f ~/.ssh/authorized_keys ]; then
-    echo "Warning: No SSH keys found in ~/.ssh/authorized_keys. SSH password authentication will remain enabled."
-else
-    sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
-    sudo sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
-    sudo systemctl restart sshd
-fi
-
-# Configure Fail2Ban for SSH protection
-echo "Configuring Fail2Ban for SSH protection..."
-sudo tee /etc/fail2ban/jail.local <<EOF
-[sshd]
-enabled = true
-port    = ssh
-logpath = %(sshd_log)s
-backend = %(syslog_backend)s
-maxretry = 5
-EOF
-sudo systemctl restart fail2ban
-
-# Enable Unattended Upgrades for Security Patches
-echo "Enabling unattended upgrades for security patches..."
-sudo dpkg-reconfigure --priority=low unattended-upgrades
-sudo sed -i '/^Unattended-Upgrade::Origins-Pattern {/a \
-"origin=Debian,codename=${distro_codename},label=Debian-Security";' /etc/apt/apt.conf.d/50unattended-upgrades
-
-# Configure Monitoring with Monit
-echo "Configuring Monit for Roon Server monitoring..."
-sudo tee /etc/monit/monitrc <<EOF
-set daemon 120
-    with start delay 240
-
-set logfile /var/log/monit.log
-
-set idfile /var/lib/monit/id
-set statefile /var/lib/monit/state
-
-include /etc/monit/conf.d/*
-include /etc/monit/conf-enabled/*
-
-check process roonserver with pidfile /var/run/roonserver.pid
-    start program = "/etc/init.d/roonserver start"
-    stop program  = "/etc/init.d/roonserver stop"
-    if failed port 9100 protocol http then restart
-    if 5 restarts within 5 cycles then timeout
-EOF
-
-sudo systemctl restart monit
-
-# Create the custom ASCII logo
-logo="
-  ___    ___  ______  ___________ 
- / _ \  / _ \ | ___ \/  __ \  _  \
-/ /_\ \/ /_\ \| |_/ /| /  \/ | | |
-|  _  ||  _  ||  __/ | |   | | | |
-| | | || | | || |    | \__/\ |/ / 
-\_| |_/\_| |_/\_|     \____/___/  
-                                  
-                                  
-Advanced Audio PC Distribution
-Maintained by lordepst
-"
-
-# Disable Automatic Updates
-echo "Disabling automatic updates..."
-
-systemctl stop unattended-upgrades
-systemctl disable unattended-upgrades
-
-apt-get remove -y unattended-upgrades
-
-systemctl mask apt-daily.service
-systemctl mask apt-daily-upgrade.service
-
-echo "APT::Periodic::Update-Package-Lists \"0\";" | tee /etc/apt/apt.conf.d/10periodic
-echo "APT::Periodic::Download-Upgradeable-Packages \"0\";" | tee -a /etc/apt/apt.conf.d/10periodic
-echo "APT::Periodic::AutocleanInterval \"0\";" | tee -a /etc/apt/apt.conf.d/10periodic
-
-apt-get purge -y update-notifier
-
-echo "Updates disabled."
+# Run the Roon Server installation
+install_roon_server
 
 # Clean up stale fstab entries
 echo "Cleaning up stale /etc/fstab entries..."
@@ -754,23 +654,19 @@ cleanup_fstab
 
 # Configure Automatic HDD/SSD Mount on Startup
 echo "Configuring automatic HDD/SSD mount on startup..."
-
 discover_drives
 
 echo "Automatic HDD/SSD mount configured."
 
 # Enable Auto-login
 echo "Enabling auto-login..."
-
 USERNAME="aserver"
-
 mkdir -p /etc/systemd/system/getty@tty1.service.d
 cat << EOF > /etc/systemd/system/getty@tty1.service.d/override.conf
 [Service]
 ExecStart=
 ExecStart=-/sbin/agetty --autologin $USERNAME --noclear %I \$TERM
 EOF
-
 systemctl enable getty@tty1.service
 
 echo "Auto-login enabled for user $USERNAME."
@@ -980,7 +876,6 @@ echo "Detecting and configuring connected audio interfaces..."
 
 if aplay -l | grep -i 'Audio'; then
     echo "Audio interface detected. Configuring as the default..."
-    # Setup and prioritize detected audio interfaces
     DEFAULT_CARD=$(aplay -l | grep -i 'Audio' | head -n 1 | awk -F '\:' '{print $2}' | awk '{print $1}')
     echo "defaults.pcm.card $DEFAULT_CARD" | sudo tee -a /etc/asound.conf
     echo "defaults.ctl.card $DEFAULT_CARD" | sudo tee -a /etc/asound.conf
@@ -990,7 +885,6 @@ fi
 
 # Network Tuning for Specific NICs
 echo "Applying network tuning based on NIC type..."
-
 NIC=$(lspci | grep -i ethernet | awk '{print $5}')
 if [[ "$NIC" == "Intel" ]]; then
     echo "Applying Intel-specific NIC optimizations..."
@@ -1022,7 +916,6 @@ sudo sysctl -p
 
 # Filesystem Configuration
 echo "Configuring filesystems for Roon Database..."
-# Regular Filesystem Checks
 echo "Scheduling regular filesystem checks..."
 sudo tune2fs -c 30 /dev/sdX1  # Replace with the correct partition
 
@@ -1035,14 +928,10 @@ EOF
 sudo systemctl restart pulseaudio
 
 # Customize Login Experience with MOTD and Issue Messages
-
-# Disable Default MOTD Components
 echo "Disabling default Ubuntu MOTD components..."
 sudo chmod -x /etc/update-motd.d/*
-
-# Create Custom MOTD Script
 echo "Creating custom MOTD script..."
-sudo cat << EOF > /etc/update-motd.d/99-custom-motd
+sudo tee /etc/update-motd.d/99-custom-motd <<EOF
 #!/bin/bash
 
 echo "***************************************************"
@@ -1062,14 +951,10 @@ echo "Advanced Audio Playback PC - Welcome!"
 echo "Enjoy your high-fidelity audio playback experience with Roon."
 echo "***************************************************"
 EOF
-
-# Make the custom MOTD script executable
 sudo chmod +x /etc/update-motd.d/99-custom-motd
 
 # Install ALSA and PulseAudio Tweaks
 echo "Installing ALSA and PulseAudio tweaks for optimal audio playback quality..."
-
-# Configure PulseAudio
 sudo sed -i 's/^; resample-method = speex-float-1/resample-method = src-sinc-best-quality/' /etc/pulse/daemon.conf
 sudo sed -i 's/^; default-sample-format = s16le/default-sample-format = s32le/' /etc/pulse/daemon.conf
 sudo sed -i 's/^; default-sample-rate = 44100/default-sample-rate = 44100/' /etc/pulse/daemon.conf
