@@ -572,38 +572,34 @@ wait
 echo "Installing and configuring auto-cpufreq for dynamic performance tuning..."
 sudo auto-cpufreq --install
 
-# Kernel Selection
-echo "Select the kernel you want to use:"
-echo "1) Low-latency kernel (recommended for most audio setups)"
-echo "2) Real-time kernel (recommended for critical low-latency applications)"
-echo "3) Generic kernel (default kernel for general-purpose use)"
-read -p "Enter your choice (1, 2, or 3): " KERNEL_CHOICE
+# Install and Switch to Low-Latency Kernel
+echo "Installing and switching to the low-latency kernel..."
+echo "Please choose the kernel you wish to install:"
+echo "1. Low Latency Kernel"
+echo "2. Real-Time Kernel (for ultra-low latency needs)"
 
-case $KERNEL_CHOICE in
+read -p "Enter the number corresponding to your choice: " kernel_choice
+
+case $kernel_choice in
     1)
-        KERNEL_PACKAGE="linux-lowlatency"
+        echo "Installing Low Latency Kernel..."
+        check_install linux-lowlatency
+        sudo sed -i 's/GRUB_DEFAULT=0/GRUB_DEFAULT="Advanced options for Ubuntu>Ubuntu, with Linux lowlatency"/g' /etc/default/grub
         ;;
     2)
-        KERNEL_PACKAGE="linux-image-$(uname -r | sed 's/generic/rt/g')"
-        ;;
-    3)
-        KERNEL_PACKAGE="linux-generic"
+        echo "Installing Real-Time Kernel..."
+        check_install linux-image-rt
+        sudo sed -i 's/GRUB_DEFAULT=0/GRUB_DEFAULT="Advanced options for Ubuntu>Ubuntu, with Linux rt"/g' /etc/default/grub
         ;;
     *)
-        echo "Invalid choice. Defaulting to low-latency kernel."
-        KERNEL_PACKAGE="linux-lowlatency"
+        echo "Invalid choice, defaulting to Low Latency Kernel."
+        check_install linux-lowlatency
+        sudo sed -i 's/GRUB_DEFAULT=0/GRUB_DEFAULT="Advanced options for Ubuntu>Ubuntu, with Linux lowlatency"/g' /etc/default/grub
         ;;
 esac
 
-# Install and Switch to Selected Kernel
-echo "Installing and switching to the selected kernel: $KERNEL_PACKAGE..."
-check_install $KERNEL_PACKAGE
-
-# Set selected kernel as the default
-sudo sed -i "s/GRUB_DEFAULT=0/GRUB_DEFAULT=\"Advanced options for Ubuntu>Ubuntu, with Linux $KERNEL_PACKAGE\"/g" /etc/default/grub
 sudo update-grub
-
-echo "$KERNEL_PACKAGE installed and set as default."
+echo "Kernel installation and configuration complete."
 
 # Optimize CPU Performance
 echo "Optimizing CPU performance by setting the governor to 'performance'..."
@@ -712,7 +708,7 @@ include /etc/monit/conf-enabled/*
 
 check process roonserver with pidfile /var/run/roonserver.pid
     start program = "/etc/init.d/roonserver start"
-    stop program = "/etc/init.d/roonserver stop"
+    stop program  = "/etc/init.d/roonserver stop"
     if failed port 9100 protocol http then restart
     if 5 restarts within 5 cycles then timeout
 EOF
