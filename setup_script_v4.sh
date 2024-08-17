@@ -10,7 +10,7 @@ check_install() {
         # Ensure dpkg is in a consistent state
         sudo dpkg --configure -a
         sudo apt-get install -f
-        if ! sudo apt-get install -y $PACKAGE; then
+        if ! apt-get install -y $PACKAGE; then
             echo "Failed to install $PACKAGE. Please check your package manager status."
             exit 1
         fi
@@ -40,6 +40,7 @@ essential_packages=(
     "sudo"
     "gzip"
     "cpufrequtils"
+    "auto-cpufreq"
     "ethtool"
     "openssh-server"
     "nfs-common"
@@ -56,9 +57,11 @@ essential_packages=(
     "fail2ban"
     "monit"
     "unattended-upgrades"
+    "tune2fs"
     "btrfs-progs"  # Only if using BTRFS for Roon Database
     "zfsutils-linux"  # Only if using ZFS for Roon Database
-    "snapd"  # Needed for installing snap packages
+    "rpcbind"
+    "ntfs-3g"  # Ensure support for NTFS volumes
 )
 
 echo "Installing essential packages..."
@@ -66,9 +69,9 @@ for pkg in "${essential_packages[@]}"; do
     check_install $pkg
 done
 
-# Install auto-cpufreq from snap
-echo "Installing auto-cpufreq using snap..."
-sudo snap install auto-cpufreq
+# Ensure rpcbind service is running
+sudo systemctl enable rpcbind
+sudo systemctl start rpcbind
 
 # Install and configure Roon Server
 install_roon_server() {
@@ -534,8 +537,11 @@ END_SCRIPT
     /tmp/install_roon.sh
 }
 
-# Install and configure Roon Server
-install_roon_server
+# Install packages in parallel for efficiency
+packages=("cpufrequtils" "glances" "remmina" "remmina-plugin-rdp" "xrdp" "nfs-common" "cifs-utils" "smbclient" "unattended-upgrades" "monit" "auto-cpufreq")
+echo "Installing necessary packages in parallel..."
+sudo apt-get install -y ${packages[@]} &
+wait
 
 # Dynamic Performance Tuning
 echo "Installing and configuring auto-cpufreq for dynamic performance tuning..."
