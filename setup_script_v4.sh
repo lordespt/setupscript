@@ -98,7 +98,7 @@ discover_drives() {
     fi
 }
 
-# Function to install and configure Roon Server
+# Install and configure Roon Server
 install_roon_server() {
     echo "Installing Roon Server..."
 
@@ -563,10 +563,14 @@ END_SCRIPT
 }
 
 # Install packages in parallel for efficiency
-packages=("cpufrequtils" "glances" "fail2ban" "remmina" "remmina-plugin-rdp" "xrdp" "nfs-common" "cifs-utils" "smbclient" "alsa-utils" "pulseaudio")
+packages=("cpufrequtils" "glances" "fail2ban" "remmina" "remmina-plugin-rdp" "xrdp" "nfs-common" "cifs-utils" "smbclient" "alsa-utils" "pulseaudio" "unattended-upgrades" "monit" "auto-cpufreq")
 echo "Installing necessary packages in parallel..."
 sudo apt-get install -y ${packages[@]} &
 wait
+
+# Dynamic Performance Tuning
+echo "Installing and configuring auto-cpufreq for dynamic performance tuning..."
+sudo auto-cpufreq --install
 
 # Install and Switch to Low-Latency Kernel
 echo "Installing and switching to the low-latency kernel..."
@@ -663,6 +667,35 @@ backend = %(syslog_backend)s
 maxretry = 5
 EOF
 sudo systemctl restart fail2ban
+
+# Enable Unattended Upgrades for Security Patches
+echo "Enabling unattended upgrades for security patches..."
+sudo dpkg-reconfigure --priority=low unattended-upgrades
+sudo sed -i '/^Unattended-Upgrade::Origins-Pattern {/a \
+"origin=Debian,codename=${distro_codename},label=Debian-Security";' /etc/apt/apt.conf.d/50unattended-upgrades
+
+# Configure Monitoring with Monit
+echo "Configuring Monit for Roon Server monitoring..."
+sudo tee /etc/monit/monitrc <<EOF
+set daemon 120
+    with start delay 240
+
+set logfile /var/log/monit.log
+
+set idfile /var/lib/monit/id
+set statefile /var/lib/monit/state
+
+include /etc/monit/conf.d/*
+include /etc/monit/conf-enabled/*
+
+check process roonserver with pidfile /var/run/roonserver.pid
+    start program = "/etc/init.d/roonserver start"
+    stop program = "/etc/init.d/roonserver stop"
+    if failed port 9100 protocol http then restart
+    if 5 restarts within 5 cycles then timeout
+EOF
+
+sudo systemctl restart monit
 
 # Create the custom ASCII logo
 logo="
@@ -946,6 +979,42 @@ if [[ "$NIC" == "Intel" ]]; then
     sudo ethtool -G eth0 rx 4096 tx 4096
     sudo ethtool -C eth0 rx-usecs 0
 fi
+
+# Further Network Optimization
+echo "Optimizing TCP/IP stack for audio streaming..."
+sudo tee -a /etc/sysctl.conf <<EOF
+net.core.netdev_max_backlog = 5000
+net.core.somaxconn = 1024
+net.ipv4.tcp_max_syn_backlog = 4096
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_fin_timeout = 15
+EOF
+sudo sysctl -p
+
+# Kernel and System Tweaks
+echo "Applying kernel and system tweaks for real-time performance..."
+sudo tee -a /etc/sysctl.conf <<EOF
+kernel.sched_latency_ns = 1000000
+kernel.sched_min_granularity_ns = 500000
+kernel.sched_wakeup_granularity_ns = 1500000
+vm.dirty_background_ratio = 5
+vm.dirty_ratio = 10
+EOF
+sudo sysctl -p
+
+# Filesystem Configuration
+echo "Configuring filesystems for Roon Database..."
+# Regular Filesystem Checks
+echo "Scheduling regular filesystem checks..."
+sudo tune2fs -c 30 /dev/sdX1  # Replace with the correct partition
+
+# Audio Playback Optimization
+echo "Optimizing audio buffer settings..."
+sudo tee -a /etc/pulse/daemon.conf <<EOF
+default-fragments = 8
+default-fragment-size-msec = 5
+EOF
+sudo systemctl restart pulseaudio
 
 # Customize Login Experience with MOTD and Issue Messages
 
