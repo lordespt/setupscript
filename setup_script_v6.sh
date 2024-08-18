@@ -65,6 +65,8 @@ essential_packages=(
     "glances"
     "taskset"
     "watchdog"
+    "rtirq-init"
+    "jackd2"
 )
 
 echo "Installing essential packages..."
@@ -109,6 +111,15 @@ echo "Optimizing CPU performance by setting the governor to 'ondemand'..."
 echo 'GOVERNOR="ondemand"' | sudo tee /etc/default/cpufrequtils
 sudo systemctl restart cpufrequtils
 
+# Disable Turbo Boost to reduce noise and jitter
+echo "Disabling Turbo Boost for enhanced audio stability..."
+echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo
+
+# Disable Unnecessary Services
+echo "Disabling unnecessary services..."
+sudo systemctl disable bluetooth.service
+sudo systemctl disable ModemManager.service
+
 # Set I/O Scheduler for SSDs to 'deadline'
 echo "Setting I/O scheduler to deadline for SSDs..."
 for dev in $(lsblk -d -o name,rota | awk '$2==0 {print $1}'); do
@@ -139,6 +150,12 @@ cat <<EOF | sudo tee /etc/security/limits.d/audio.conf
 @audio   -  nice      -19
 @audio   -  memlock    unlimited
 EOF
+
+# Configure PulseAudio for High-Resolution Audio
+echo "Configuring PulseAudio for high-resolution audio..."
+sudo sed -i 's/^; default-sample-format = s16le/default-sample-format = float32le/' /etc/pulse/daemon.conf
+sudo sed -i 's/^; default-sample-rate = 44100/default-sample-rate = 96000/' /etc/pulse/daemon.conf
+sudo systemctl restart pulseaudio
 
 # Increase File Descriptors Limit
 echo "Increasing file descriptors limit..."
@@ -227,17 +244,20 @@ ExecStart=-/sbin/agetty --autologin $USERNAME --noclear %I \$TERM
 EOF
 sudo systemctl enable getty@tty1.service
 
-# Custom MOTD setup
+# Create the custom ASCII logo
 logo="
   ___    ___  ______  ___________ 
- / _ \  / _ \ | ___ \/  __ \  _  \\
+ / _ \  / _ \ | ___ \/  __ \  _  \
 / /_\ \/ /_\ \| |_/ /| /  \/ | | |
 |  _  ||  _  ||  __/ | |   | | | |
 | | | || | | || |    | \__/\ |/ / 
 \_| |_/\_| |_/\_|     \____/___/  
                                   
                                   
+Advanced Audio PC Distribution
+Maintained by lordepst
 "
+
 
 # Disable Default MOTD Components
 echo "Disabling default Ubuntu MOTD components..."
