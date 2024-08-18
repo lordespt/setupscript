@@ -88,7 +88,6 @@ sudo systemctl enable rpcbind --now
 # Install and configure Roon Server
 install_roon_server() {
     echo "Installing Roon Server..."
-    sudo rm -rf /opt/RoonServer
     wget http://download.roonlabs.com/builds/roonserver-installer-linuxx64.sh
     chmod +x roonserver-installer-linuxx64.sh
     sudo ./roonserver-installer-linuxx64.sh
