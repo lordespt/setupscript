@@ -61,7 +61,7 @@ essential_packages=(
     "ntfs-3g"
     "lm-sensors"
     "sysstat"
-    "usbmount"  # Automatically mount USB drives
+    "git"  # Required for cloning the usbmount repository
 )
 
 echo "Installing essential packages..."
@@ -186,8 +186,13 @@ sudo systemctl restart fail2ban
 echo "Enabling unattended upgrades for security patches..."
 sudo dpkg-reconfigure --priority=low unattended-upgrades
 
-# Configure USB Automount
-echo "Setting up USB automount..."
+# Install and Configure USB Automount using usbmount
+echo "Cloning and installing usbmount from GitHub..."
+git clone https://github.com/rbrito/usbmount.git
+cd usbmount
+sudo make install
+
+# Ensure the usbmount service is running
 sudo systemctl enable usbmount
 sudo systemctl start usbmount
 
@@ -204,9 +209,8 @@ sudo systemctl enable getty@tty1.service
 
 # Custom MOTD setup
 logo="
-
   ___    ___  ______  ___________ 
- / _ \  / _ \ | ___ \/  __ \  _  \
+ / _ \  / _ \ | ___ \/  __ \  _  \\
 / /_\ \/ /_\ \| |_/ /| /  \/ | | |
 |  _  ||  _  ||  __/ | |   | | | |
 | | | || | | || |    | \__/\ |/ / 
