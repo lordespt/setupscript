@@ -30,7 +30,7 @@ essential_packages=(
     "apt-transport-https"
     "ca-certificates"
     "ufw"
-    "lbzip2"
+    "bzip2"
     "htop"
     "git"
     "net-tools"
