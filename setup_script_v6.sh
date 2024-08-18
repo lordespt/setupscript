@@ -70,12 +70,13 @@ essential_packages=(
     "jackd2"
 )
 
-echo "Installing essential packages..."
-sudo apt-get install -y ${essential_packages[@]}
+echo "Checking and installing essential packages..."
+for pkg in "${essential_packages[@]}"; do
+    check_install $pkg
+done
 
 # Setup CPU Temperature Monitoring
 echo "Setting up CPU temperature monitoring..."
-sudo apt-get install -y lm-sensors
 sudo sensors-detect --auto
 sudo systemctl restart lm-sensors
 
@@ -244,11 +245,6 @@ sudo systemctl start udiskie.service
 # Auto-login setup
 echo "Enabling auto-login..."
 USERNAME="aserver"  # Replace with the actual username
-sudo mkdir -p /etc/systemd/system/getty@tty1It looks like the script got cut off. Here is the continuation and completion of the script:
-
-```bash
-# Auto-login setup (continued)
-USERNAME="aserver"  # Replace with the actual username
 sudo mkdir -p /etc/systemd/system/getty@tty1.service.d
 sudo tee /etc/systemd/system/getty@tty1.service.d/override.conf > /dev/null <<EOF
 [Service]
@@ -260,7 +256,7 @@ sudo systemctl enable getty@tty1.service
 # Custom MOTD setup
 logo="
   ___    ___  ______  ___________ 
- / _ \  / _ \ | ___ \/  __ \  _  \\
+ / _ \  / _ \ | ___ \/  __ \  _  \
 / /_\ \/ /_\ \| |_/ /| /  \/ | | |
 |  _  ||  _  ||  __/ | |   | | | |
 | | | || | | || |    | \__/\ |/ / 
@@ -359,7 +355,6 @@ sudo sysctl -p
 
 # Enable Watchdog Timer
 echo "Enabling watchdog timer for system stability..."
-sudo apt-get install -y watchdog
 sudo systemctl enable watchdog
 sudo systemctl start watchdog
 
