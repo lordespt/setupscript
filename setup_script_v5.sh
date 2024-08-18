@@ -59,14 +59,20 @@ essential_packages=(
     "zfsutils-linux"
     "rpcbind"
     "ntfs-3g"
-    "lm-sensors"  # For monitoring CPU temperature
-    "sysstat"     # For system load monitoring
+    "lm-sensors"
+    "sysstat"
+    "usbmount"  # Automatically mount USB drives
 )
 
 echo "Installing essential packages..."
 for pkg in "${essential_packages[@]}"; do
     check_install $pkg
 done
+
+# Setup CPU Temperature Monitoring
+echo "Setting up CPU temperature monitoring..."
+sudo sensors-detect --auto
+sudo systemctl restart lm-sensors
 
 # Install auto-cpufreq using snap
 echo "Installing auto-cpufreq using snap..."
@@ -180,32 +186,10 @@ sudo systemctl restart fail2ban
 echo "Enabling unattended upgrades for security patches..."
 sudo dpkg-reconfigure --priority=low unattended-upgrades
 
-# Robust Auto-Mount for drives using fstab configuration
-echo "Configuring robust auto-mount for drives..."
-sudo cp /etc/fstab /etc/fstab.backup  # Backup current fstab
-
-# Function to add a drive to /etc/fstab
-add_to_fstab() {
-    UUID=$1
-    MOUNTPOINT=$2
-    FSTYPE=$3
-
-    # Check if the UUID already exists in /etc/fstab
-    if ! grep -q "UUID=$UUID" /etc/fstab; then
-        echo "UUID=$UUID $MOUNTPOINT $FSTYPE defaults,nofail,x-systemd.automount,x-systemd.device-timeout=5 0 2" | sudo tee -a /etc/fstab
-    else
-        echo "Drive with UUID $UUID already exists in /etc/fstab. Skipping."
-    fi
-}
-
-# Get details of all the drives and add to fstab if not already present
-lsblk -o UUID,NAME,FSTYPE,SIZE,MOUNTPOINT | grep -v 'loop\|NAME' | while read uuid name fstype size mountpoint; do
-    if [ -z "$mountpoint" ] && [ "$fstype" != "" ]; then
-        MOUNTPOINT="/mnt/$name"
-        sudo mkdir -p $MOUNTPOINT
-        add_to_fstab $uuid $MOUNTPOINT $fstype
-    fi
-done
+# Configure USB Automount
+echo "Setting up USB automount..."
+sudo systemctl enable usbmount
+sudo systemctl start usbmount
 
 # Auto-login setup
 echo "Enabling auto-login..."
