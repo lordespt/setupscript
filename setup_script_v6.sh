@@ -64,7 +64,6 @@ essential_packages=(
     "sysstat"
     "udiskie"
     "glances"
-    "taskset"
     "watchdog"
     "rtirq-init"
     "jackd2"
