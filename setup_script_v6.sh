@@ -63,6 +63,8 @@ essential_packages=(
     "sysstat"
     "udiskie"
     "glances"
+    "taskset"
+    "watchdog"
 )
 
 echo "Installing essential packages..."
@@ -295,7 +297,7 @@ echo "Applying additional performance tuning..."
 
 # Reduce CPU power states for consistent performance
 echo "Disabling deep C-states to reduce latency..."
-sudo sed -i 's/GRUB_CMDLINE_LINUX="[^"]*/& intel_idle.max_cstate=1/' /etc/default/grub
+sudo sed -i 's/GRUB_CMDLINE_LINUX="[^"]*/& intel_idle.max_cstate=1 processor.max_cstate=1/' /etc/default/grub
 sudo update-grub
 
 # Increase TCP buffer sizes
@@ -324,6 +326,46 @@ vm.dirty_background_ratio = 5
 vm.dirty_ratio = 10
 EOF
 sudo sysctl -p
+
+# Enable Watchdog Timer
+echo "Enabling watchdog timer for system stability..."
+sudo apt-get install -y watchdog
+sudo systemctl enable watchdog
+sudo systemctl start watchdog
+
+# Enable Memory Locking for Critical Applications
+echo "Enabling memory locking for critical applications..."
+sudo tee -a /etc/security/limits.d/99-audio.conf > /dev/null <<EOF
+root   -  memlock    unlimited
+roon   -  memlock    unlimited
+EOF
+
+# Enable HugePages for memory optimization
+echo "Enabling HugePages for memory optimization..."
+sudo sysctl -w vm.nr_hugepages=128
+echo "vm.nr_hugepages=128" | sudo tee -a /etc/sysctl.conf
+
+# Process Supervision and Restart Policies
+echo "Configuring process supervision for Roon Server..."
+sudo tee /etc/systemd/system/roonserver.service > /dev/null <<EOF
+[Unit]
+Description=Roon Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/roonserver
+Restart=on-failure
+RestartSec=5s
+CPUAffinity=0-3
+IOAccounting=true
+MemoryAccounting=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable roonserver.service
 
 # Final Message
 echo "Setup complete! Your Advanced Audio PC login experience is now personalized."
