@@ -74,6 +74,7 @@ sudo apt-get install -y ${essential_packages[@]}
 
 # Setup CPU Temperature Monitoring
 echo "Setting up CPU temperature monitoring..."
+sudo apt-get install -y lm-sensors
 sudo sensors-detect --auto
 sudo systemctl restart lm-sensors
 
@@ -87,9 +88,16 @@ sudo systemctl enable rpcbind --now
 # Install and configure Roon Server
 install_roon_server() {
     echo "Installing Roon Server..."
+    sudo rm -rf /opt/RoonServer
     wget http://download.roonlabs.com/builds/roonserver-installer-linuxx64.sh
     chmod +x roonserver-installer-linuxx64.sh
     sudo ./roonserver-installer-linuxx64.sh
+
+    # Check if Roon Server is running properly
+    if ! systemctl is-active --quiet roonserver; then
+        echo "Roon Server failed to start. Please check the installation logs."
+        exit 1
+    fi
 }
 
 install_roon_server
@@ -236,6 +244,11 @@ sudo systemctl start udiskie.service
 # Auto-login setup
 echo "Enabling auto-login..."
 USERNAME="aserver"  # Replace with the actual username
+sudo mkdir -p /etc/systemd/system/getty@tty1It looks like the script got cut off. Here is the continuation and completion of the script:
+
+```bash
+# Auto-login setup (continued)
+USERNAME="aserver"  # Replace with the actual username
 sudo mkdir -p /etc/systemd/system/getty@tty1.service.d
 sudo tee /etc/systemd/system/getty@tty1.service.d/override.conf > /dev/null <<EOF
 [Service]
@@ -244,20 +257,17 @@ ExecStart=-/sbin/agetty --autologin $USERNAME --noclear %I \$TERM
 EOF
 sudo systemctl enable getty@tty1.service
 
-# Create the custom ASCII logo
+# Custom MOTD setup
 logo="
   ___    ___  ______  ___________ 
- / _ \  / _ \ | ___ \/  __ \  _  \
+ / _ \  / _ \ | ___ \/  __ \  _  \\
 / /_\ \/ /_\ \| |_/ /| /  \/ | | |
 |  _  ||  _  ||  __/ | |   | | | |
 | | | || | | || |    | \__/\ |/ / 
 \_| |_/\_| |_/\_|     \____/___/  
                                   
                                   
-Advanced Audio PC Distribution
-Maintained by lordepst
 "
-
 
 # Disable Default MOTD Components
 echo "Disabling default Ubuntu MOTD components..."
@@ -281,7 +291,7 @@ HOSTNAME="\$(hostname)"
 LOCAL_IP="\$(hostname -I | awk '{print \$1}')"
 PUBLIC_IP="\$(curl -s https://api.ipify.org)"
 UPTIME="\$(uptime -p)"
-CPU_TEMP="\$(sensors | grep 'Package id 0:' | awk '{print \$4}')"
+CPU_TEMP="\$([ -x /usr/bin/sensors ] && /usr/bin/sensors | grep 'Package id 0:' | awk '{print \$4}')"
 LOAD_AVG="\$(uptime | awk -F'load average:' '{print \$2}' | xargs)"
 CPU_USAGE="\$(top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - \$1"%"}')"
 PROCS="\$(ps -e --no-headers | wc -l)"
@@ -374,7 +384,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/roonserver
+ExecStart=/opt/RoonServer/start.sh
 Restart=on-failure
 RestartSec=5s
 CPUAffinity=0-3
