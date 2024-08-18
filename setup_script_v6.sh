@@ -93,6 +93,10 @@ install_roon_server() {
     chmod +x roonserver-installer-linuxx64.sh
     sudo ./roonserver-installer-linuxx64.sh
 
+    # Enable and start Roon Server
+    sudo systemctl enable roonserver
+    sudo systemctl start roonserver
+
     # Check if Roon Server is running properly
     if ! systemctl is-active --quiet roonserver; then
         echo "Roon Server failed to start. Please check the installation logs."
@@ -203,6 +207,9 @@ sudo ufw default deny incoming
 sudo ufw default allow outgoing
 sudo ufw allow ssh
 sudo ufw allow 9100:9200/tcp  # Roon's default range
+sudo ufw allow proto udp from any to any port 1900,9003
+sudo ufw allow proto udp from 224.0.0.0/4
+sudo ufw allow proto udp from 239.255.255.250
 sudo ufw enable
 
 # Configure Fail2Ban for SSH protection
@@ -239,7 +246,7 @@ EOF
 # Enable and start the udiskie service
 sudo systemctl daemon-reload
 sudo systemctl enable udiskie.service
-sudo systemctl start udiskie.service
+sudo systemctl start udiskie.servic
 
 # Auto-login setup
 echo "Enabling auto-login..."
