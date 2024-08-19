@@ -3,6 +3,9 @@
 sudo tee /etc/update-motd.d/99-custom-motd > /dev/null <<'EOF'
 #!/bin/bash
 
+# Clear previous MOTD content
+> /etc/motd
+
 # System Information
 HOSTNAME="$(hostname)"
 LOCAL_IP="$(hostname -I | awk '{print $1}')"
@@ -14,6 +17,7 @@ CPU_USAGE="$(top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | aw
 PROCS="$(ps -e --no-headers | wc -l)"
 
 # Display MOTD
+{
 echo "***************************************************"
 echo "Welcome to Your Advanced Audio Playback PC"
 echo "Hostname: $HOSTNAME"
@@ -47,6 +51,7 @@ echo "***************************************************"
 echo "Advanced Audio Playback PC - Welcome!"
 echo "Enjoy your high-fidelity audio playback experience with Roon."
 echo "***************************************************"
+} > /etc/motd
 EOF
 
 sudo chmod +x /etc/update-motd.d/99-custom-motd
