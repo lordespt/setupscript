@@ -41,7 +41,7 @@ Maintained by lordepst
 "
 echo "***************************************************"
 echo "Advanced Audio Playback PC - Welcome!"
-echo "Enjoy your high-fidelity audio playback experience with Roon."
+echo "Enjoy your high-fidelity audio playback experience."
 echo "***************************************************"
 EOF
 
