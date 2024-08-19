@@ -1,5 +1,3 @@
-#!/bin/bash
-
 sudo tee /etc/update-motd.d/99-custom-motd > /dev/null <<EOF
 #!/bin/bash
 
@@ -36,8 +34,8 @@ echo "
 |  _  ||  _  ||  __/ | |   | | | |
 | | | || | | || |    | \__/\ |/ / 
 \_| |_/\_| |_/\_|     \____/___/  
-                                  
-                                  
+                                   
+                                   
 Advanced Audio PC Distribution
 Maintained by lordepst
 "
