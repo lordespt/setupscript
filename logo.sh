@@ -1,18 +1,5 @@
 #!/bin/bash
 
-logo="
-  ___    ___  ______  ___________ 
- / _ \  / _ \ | ___ \/  __ \  _  \
-/ /_\ \/ /_\ \| |_/ /| /  \/ | | |
-|  _  ||  _  ||  __/ | |   | | | |
-| | | || | | || |    | \__/\ |/ / 
-\_| |_/\_| |_/\_|     \____/___/  
-                                  
-                                  
-Advanced Audio PC Distribution
-Maintained by lordepst
-"
-
 sudo tee /etc/update-motd.d/99-custom-motd > /dev/null <<EOF
 #!/bin/bash
 
@@ -42,7 +29,18 @@ echo "Roon Server Status: \$(systemctl is-active roonserver)"
 echo "CPU Governor: \$(cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor | uniq)"
 echo "Low Latency Kernel: \$(uname -r | grep -q lowlatency && echo Yes || echo No)"
 echo "***************************************************"
-echo "\$logo"
+echo "
+  ___    ___  ______  ___________ 
+ / _ \  / _ \ | ___ \/  __ \  _  \
+/ /_\ \/ /_\ \| |_/ /| /  \/ | | |
+|  _  ||  _  ||  __/ | |   | | | |
+| | | || | | || |    | \__/\ |/ / 
+\_| |_/\_| |_/\_|     \____/___/  
+                                  
+                                  
+Advanced Audio PC Distribution
+Maintained by lordepst
+"
 echo "***************************************************"
 echo "Advanced Audio Playback PC - Welcome!"
 echo "Enjoy your high-fidelity audio playback experience with Roon."
