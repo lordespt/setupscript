@@ -251,10 +251,11 @@ sudo systemctl daemon-reload
 sudo systemctl enable udiskie.service
 sudo systemctl start udiskie.service
 
-# RustDesk Headless Installation and Configuration
-echo "Installing and configuring RustDesk for headless remote access..."
-wget https://github.com/rustdesk/rustdesk/releases/download/1.1.9/rustdesk-1.1.9-x86_64.deb
-sudo dpkg -i rustdesk-1.1.9-x86_64.deb
+# Download and install the latest RustDesk for headless remote access
+echo "Downloading and installing the latest RustDesk for headless remote access..."
+latest_version=$(curl -s https://api.github.com/repos/rustdesk/rustdesk/releases/latest | grep "tag_name" | cut -d '"' -f 4)
+wget "https://github.com/rustdesk/rustdesk/releases/download/${latest_version}/rustdesk-${latest_version}-x86_64.deb"
+sudo dpkg -i "rustdesk-${latest_version}-x86_64.deb"
 sudo apt-get install -f -y  # To resolve any dependency issues
 
 # Configure RustDesk with the provided parameters
@@ -287,6 +288,11 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl enable rustdesk.service
 sudo systemctl start rustdesk.service
+
+# Set environment variables for Roon Server in /etc/environment
+echo "Setting environment variables for Roon Server..."
+echo 'DOTNET_GCRetainVM=1' | sudo tee -a /etc/environment
+echo 'DOTNET_gcServer=0' | sudo tee -a /etc/environment
 
 # Auto-login setup
 echo "Enabling auto-login..."
