@@ -251,12 +251,54 @@ sudo systemctl daemon-reload
 sudo systemctl enable udiskie.service
 sudo systemctl start udiskie.service
 
-# Download and install the latest RustDesk for headless remote access
-echo "Downloading and installing the latest RustDesk for headless remote access..."
+# Install RustDesk for headless remote access
+echo "Installing the latest RustDesk for headless remote access..."
 latest_version=$(curl -s https://api.github.com/repos/rustdesk/rustdesk/releases/latest | grep "tag_name" | cut -d '"' -f 4)
 wget "https://github.com/rustdesk/rustdesk/releases/download/${latest_version}/rustdesk-${latest_version}-x86_64.deb"
 sudo dpkg -i "rustdesk-${latest_version}-x86_64.deb"
 sudo apt-get install -f -y  # To resolve any dependency issues
+
+# Install GNOME, X server dummy driver, and LightDM
+echo "Installing GNOME, X server dummy driver, and LightDM..."
+sudo apt install -y ubuntu-desktop xserver-xorg-video-dummy lightdm
+
+# Create Xorg configuration for headless mode with dummy video driver
+echo "Creating Xorg configuration for headless mode..."
+sudo mkdir -p /usr/share/X11/xorg.conf.d/
+sudo tee /usr/share/X11/xorg.conf.d/xorg.conf > /dev/null <<EOF
+Section "Device"
+  Identifier "Configured Video Device"
+  Driver "dummy"
+  VideoRam 16384
+EndSection
+
+Section "Monitor"
+  Identifier "Configured Monitor"
+  HorizSync 5.0 - 1000.0
+  VertRefresh 5.0 - 1000.0
+  ModeLine "1920x1080" 23.53 1920 1952 2040 2072 1080 1106 1108 1135
+EndSection
+
+Section "Screen"
+  Identifier "Default Screen"
+  Monitor "Configured Monitor"
+  Device "Configured Video Device"
+  DefaultDepth 24
+  SubSection "Display"
+    Depth 24
+    Modes "1920x1080"
+  EndSubSection
+EndSection
+EOF
+
+# Enable headless mode for RustDesk
+echo "Enabling RustDesk headless mode..."
+sudo rustdesk --option allow-linux-headless Y
+
+# Get RustDesk ID and set password
+echo "Configuring RustDesk..."
+sudo rustdesk --get-id
+sudo rustdesk --password "Aserver2024"
 
 # Configure RustDesk with the provided parameters
 sudo mkdir -p /etc/rustdesk
