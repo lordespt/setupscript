@@ -251,25 +251,42 @@ sudo systemctl daemon-reload
 sudo systemctl enable udiskie.service
 sudo systemctl start udiskie.service
 
-# RustDesk Installation and Configuration for Headless Mode
-echo "Installing and configuring RustDesk for headless mode..."
+# RustDesk Headless Installation and Configuration
+echo "Installing and configuring RustDesk for headless remote access..."
 wget https://github.com/rustdesk/rustdesk/releases/download/1.1.9/rustdesk-1.1.9-x86_64.deb
 sudo dpkg -i rustdesk-1.1.9-x86_64.deb
 sudo apt-get install -f -y  # To resolve any dependency issues
 
-# Configure RustDesk
-echo "Configuring RustDesk..."
-sudo mkdir -p /root/.config/rustdesk
-sudo tee /root/.config/rustdesk/RustDesk2.toml > /dev/null <<EOF
-[global]
-id = "Aserver2024"
-api_server = "rustdesk.fwrpg.com:21116"
-relay_server = "rustdesk.fwrpg.com:21117"
+# Configure RustDesk with the provided parameters
+sudo mkdir -p /etc/rustdesk
+sudo tee /etc/rustdesk/RustDesk.toml > /dev/null <<EOF
+[server]
+id = "rustdesk.fwrpg.com:21116"
+relay = "rustdesk.fwrpg.com:21117"
 key = "7pBfPP1bDKjV8kzPnAaGFDPt69ke1nfvVIbx6ULhbCQ"
+
+[client]
+password = "Aserver2024"
 EOF
 
-# Restart RustDesk service
-sudo systemctl restart rustdesk
+# Set RustDesk to run as a service
+sudo tee /etc/systemd/system/rustdesk.service > /dev/null <<EOF
+[Unit]
+Description=RustDesk Remote Desktop Service
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/rustdesk --headless
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable rustdesk.service
+sudo systemctl start rustdesk.service
 
 # Auto-login setup
 echo "Enabling auto-login..."
